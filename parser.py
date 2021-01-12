@@ -129,7 +129,7 @@ def parse_command(tokens):
 			tokens.pop(0)
 			while True:
 				if len(tokens) == 0:
-					raise ParseError("no matching close tag for call arguments", linenum)
+					raise ParseError("no matching close tag for macro call arguments", linenum)
 				if tokens[0][0] == ")":
 					tokens.pop(0)
 					break

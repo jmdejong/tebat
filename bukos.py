@@ -202,6 +202,7 @@ sourcecode = """\n
 	putchar(10)
 }
 !alloc(amount) {
+	# there's no free yet so it's not necessary to keep track of allocated memory
 	deref(@freeheapstart)
 	addto(@freeheapstart amount)
 }
@@ -219,37 +220,8 @@ sourcecode = """\n
 :codestart
 alloc(2048) # reserve 2048 words space for the stack
 
-# print all printable ascii characters
-32 # if there is just a number then that number is pushed to the stack
-while (lt(.dup 127) { # dup copies the top value of the stack
-	# curly braces form a code block
-	# this allows multiple expressions to be passed as a single macro argument
-	putchar(.dup)
-	add({ } 1) # { } is an empty code block (without return value). It can be used in place of a macro argument to take the top value from the stack instead
-})
-.drop # drop the top value from the stack
-
-# call the printnl function without arguments
-call(@printnl { })
-
-# call the factorial function and print the result as integer
-# This function takes one value as argument
-putint(call(@factorial 6))
-
-call(@printnl { })
-
-# print some text
-println("hello world")
-
-# call the fizzbuzz function, which also takes one argument
-call(@fizzbuzz 50)
-
-print("3^7 = ")
-putint(call(@pow {3 7}))
-print("\n")
-
-# end with exit code 0
-exit(0)
+# end with as exit code the return value from main
+exit(call(@main { }))
 
 # function to print a newline character
 function(
@@ -331,10 +303,53 @@ function (:powhelper 3 0 {
 		getvar(-3)
 	})
 })
+
+function (:gcd 2 0 {
+	if (eq(getvar(-4) 0){
+		return(getvar(-3))
+	})
+	tailcall(@gcd {mod(getvar(-3) getvar(-4)) getvar(-4)})
+})
+
+function (:main 0 0 {
+	# print all printable ascii characters
+	32 # if there is just a number then that number is pushed to the stack
+	while (lt(.dup 127) { # dup copies the top value of the stack
+		# curly braces form a code block
+		# this allows multiple expressions to be passed as a single macro argument
+		putchar(.dup)
+		add({ } 1) # { } is an empty code block (without return value). It can be used in place of a macro argument to take the top value from the stack instead
+	})
+	.drop # drop the top value from the stack
+
+	# call the printnl function without arguments
+	call(@printnl { })
+
+	# call the factorial function and print the result as integer
+	# This function takes one value as argument
+	putint(call(@factorial 6))
+
+	call(@printnl { })
+
+	# print some text
+	println("hello world")
+
+	# call the fizzbuzz function, which also takes one argument
+	call(@fizzbuzz 50)
+
+	print("3^7 = ")
+	putint(call(@pow {3 7}))
+	print("\n")
+	
+	print("Greatest Common Divisor of 24 and 128 = ")
+	putint(call(@gcd {24 128}))
+	print("\n")
+	0
+})
 # some extra space of memory
 # this is used for global constants and variables
 [0]
-:freeheapstart
+:freeheapstart # pointer to the first free address of memory that can be used as heap
 [@codeend]
 :funcmem # pointer to the location of the function arguments and local variables
 [0]
