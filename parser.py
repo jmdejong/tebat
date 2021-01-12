@@ -12,6 +12,19 @@ class ParseError(Exception):
 		else:
 			return "ParseError(\"{}\", {})".format(self.message, str(self.line))
 
+class Token:
+	IDENT = "ident"
+	NUM = "num"
+	MACRODEF = "!"
+	LABEL = ":"
+	REFERENCE = "@"
+	BUILTIN = "."
+	STRING = "str"
+	def __init__(self, typ, text, linenum):
+		self.typ = typ
+		self.text = text
+		self.linenum = linenum
+
 def tokenize(text):
 	tokens = []
 	linenum = 1
@@ -23,34 +36,38 @@ def tokenize(text):
 				linenum += 1
 			continue
 		tokenl = []
+		typ = None
 		if ch == "#":
 			while len(letters) and letters.pop(0) != "\n":
 				pass
 			linenum += 1
+			continue
 		elif ch.isdecimal() or ch == "-":
 			tokenl.append(ch)
 			while len(letters) and letters[0].isdecimal():
 				tokenl.append(letters.pop(0))
+			typ = Token.NUM
 		elif ch.isalpha():
 			tokenl.append(ch)
 			while len(letters) and letters[0].isalpha():
 				tokenl.append(letters.pop(0))
+			typ = Token.IDENT
 		elif ch in "(){}[]":
 			tokenl.append(ch)
+			typ = ch
 		elif ch in ":@":
-			tokenl.append(ch)
 			if len(letters) == 0:
 				raise ParseError("line ended unexpectedly")
 			while len(letters) and letters[0].isalnum():
 				tokenl.append(letters.pop(0))
+			typ = ch
 		elif ch in "!.":
-			tokenl.append(ch)
 			if len(letters) == 0:
 				raise ParseError("line parsing ended unexpectedly")
 			while len(letters) and letters[0].isalpha():
 				tokenl.append(letters.pop(0))
+			typ = ch
 		elif ch == '"':
-			tokenl = [ch]
 			while True:
 				if len(letters) == 0:
 					raise ParseError("unterminated string")
@@ -69,10 +86,11 @@ def tokenize(text):
 						tokenl.append(n)
 				else:
 					tokenl.append(c)
+			typ = Token.STRING
 		else:
 			raise ParseError("Unknown token character: '{}'".format(ch))
-		if len(tokenl):
-			tokens.append(("".join(tokenl), linenum))
+		if typ is not None:
+			tokens.append(Token(typ, "".join(tokenl), linenum))
 	return tokens
 
 
@@ -117,84 +135,82 @@ class CodeNode(Node):
 		self.code = code
 
 
-def isnum(token):
-	return token.isdecimal() or token != "" and token[0] == "-" and token[1:].isdecimal()
+#def isnum(token):
+	#return token.isdecimal() or token != "" and token[0] == "-" and token[1:].isdecimal()
 
 def parse_command(tokens):
-	(token, linenum) = tokens.pop(0)
-	
-	if token.isalpha():
+	token = tokens.pop(0)
+	typ = token.typ
+	if typ == Token.IDENT:
 		args = []
-		if tokens[0][0] == "(":
+		if tokens[0].typ == "(":
 			tokens.pop(0)
 			while True:
 				if len(tokens) == 0:
 					raise ParseError("no matching close tag for macro call arguments", linenum)
-				if tokens[0][0] == ")":
+				if tokens[0].typ == ")":
 					tokens.pop(0)
 					break
 				args.append(parse_command(tokens))
-		return CallNode(token, args)
-	elif token[0] == "!":
-		name = token[1:]
+		return CallNode(token.text, args)
+	elif typ == Token.MACRODEF:
+		name = token.text
 		if len(tokens) == 0:
 			raise ParseError("macro has no body")
 		args = []
-		if tokens[0][0] == "(":
+		if tokens[0].typ == "(":
 			tokens.pop(0)
 			while True:
 				if len(tokens) == 0:
 					raise ParseError("no matching close tag for macro arguments")
-				t, _line = tokens.pop(0)
-				if t == ")":
+				t = tokens.pop(0)
+				if t.typ == ")":
 					break
-				args.append(t)
+				args.append(t.text)
 		if len(tokens) == 0:
 			raise ParseError("macro has no body")
 		labels = []
-		if tokens[0][0] == "(":
+		if tokens[0].typ == "(":
 			tokens.pop(0)
 			while True:
 				if len(tokens) == 0:
 					raise ParseError("no matching close tag for macro labels")
-				t, _line = tokens.pop(0)
-				if t == ")":
+				t = tokens.pop(0)
+				if t.typ == ")":
 					break
-				if t[0] != ":":
+				if t.typ != Token.LABEL:
 					raise ParseError("non label in labels field")
-				labels.append(t[1:])
+				labels.append(t.text)
 		if len(tokens) == 0:
 			raise ParseError("macro has no body")
 		body = parse_command(tokens)
 		return MacroDefNode(name, args, body, labels)
-	elif token[0] == ".":
-		return BuiltinNode(token[1:])
-	elif token[0] == "$":
-		return MacroArgumentNode(token[1:])
-	elif token[0] == ":":
-		return LabelNode(token[1:])
-	elif token[0] == "@":
-		return ReferenceNode(token[1:])
-	elif isnum(token):
-		return NumberNode(int(token))
-	elif token == "{":
+	elif typ == Token.BUILTIN:
+		return BuiltinNode(token.text)
+	elif typ == Token.LABEL:
+		return LabelNode(token.text)
+	elif typ == Token.REFERENCE:
+		return ReferenceNode(token.text)
+	elif typ == Token.NUM:
+		return NumberNode(int(token.text))
+	elif typ == "{":
 		code = []
 		while True:
 			if len(tokens) == 0:
 				raise ParseError("No matching close tag for a code block")
-			if tokens[0][0] == "}":
+			if tokens[0].typ == "}":
 				tokens.pop(0)
 				break
 			code.append(parse_command(tokens))
 		return BlockNode(code)
-	elif token[0] == "\"":
-		return CodeNode([ord(c) for c in token[1:]])
-	elif token == "[":
+	elif typ == Token.STRING:
+		return CodeNode([ord(c) for c in token.text])
+	elif typ == "[":
 		code = []
 		while True:
 			if len(tokens) == 0:
 				raise ParseError("No matching close tag for a raw block")
-			if tokens[0][0] == "]":
+			if tokens[0].typ == "]":
 				tokens.pop(0)
 				break
 			node = parse_command(tokens)
@@ -213,12 +229,10 @@ def parse_command(tokens):
 class Label:
 	def __init__(self, name):
 		self.name = name
-		#self.scope = scope
 
 class Reference:
 	def __init__(self, name):
 		self.name = name
-		#self.scope = scope
 
 class Substitution:
 	def __init__(self, body, args=None, labels=None):
