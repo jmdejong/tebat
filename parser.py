@@ -1,5 +1,8 @@
 
 from run import Commands
+import sys
+# make the stacktrace for infinite mutual recursion smaller
+sys.setrecursionlimit(40)
 
 class ParseError(Exception):
 	def __init__(self, message, line=None):
@@ -42,18 +45,17 @@ def tokenize(text):
 				pass
 			linenum += 1
 			continue
-		elif ch.isdecimal() or ch == "-":
+		elif ch.isdecimal() or (ch == "-" and len(letters) and letters[0].isdecimal()):
 			tokenl.append(ch)
 			while len(letters) and letters[0].isdecimal():
 				tokenl.append(letters.pop(0))
 			typ = Token.NUM
-		elif ch.isalpha():
+		elif ch.isalpha() or ch == "_":
 			tokenl.append(ch)
-			while len(letters) and letters[0].isalpha():
+			while len(letters) and (letters[0].isalpha() or letters[0].isdecimal() or letters[0] == "_"):
 				tokenl.append(letters.pop(0))
 			typ = Token.IDENT
-		elif ch in "(){}[]":
-			tokenl.append(ch)
+		elif ch in "(){[]}!":
 			typ = ch
 		elif ch in ":@":
 			if len(letters) == 0:
@@ -61,7 +63,7 @@ def tokenize(text):
 			while len(letters) and letters[0].isalnum():
 				tokenl.append(letters.pop(0))
 			typ = ch
-		elif ch in "!.":
+		elif ch == ".":
 			if len(letters) == 0:
 				raise ParseError("line parsing ended unexpectedly")
 			while len(letters) and letters[0].isalpha():
@@ -88,7 +90,7 @@ def tokenize(text):
 					tokenl.append(c)
 			typ = Token.STRING
 		else:
-			raise ParseError("Unknown token character: '{}'".format(ch))
+			raise ParseError("Unknown token character: '{}'".format(ch), linenum)
 		if typ is not None:
 			tokens.append(Token(typ, "".join(tokenl), linenum))
 	return tokens
@@ -96,47 +98,45 @@ def tokenize(text):
 
 
 class Node:
-	pass
+	def __repr__(self):
+		return "{}({})".format(
+			type(self).__name__,
+			", ".join(
+				"{}={}".format(key, val)
+					for key, val in self.__dict__.items()
+					if len(key) != 0 and key[0] != "_"
+			)
+		)
 
 class BuiltinNode(Node):
 	def __init__(self, name):
 		self.name = name
-
 class CallNode(Node):
 	def __init__(self, name, args):
 		self.name = name
 		self.args = args
-
 class NumberNode(Node):
 	def __init__(self, val):
 		self.val = val
-
 class BlockNode(Node):
 	def __init__(self, code):
 		self.code = code
-
 class LabelNode(Node):
 	def __init__(self, name):
 		self.name = name
-
 class ReferenceNode(Node):
 	def __init__(self, name):
 		self.name = name
-
 class MacroDefNode(Node):
 	def __init__(self, name, args, body, labels):
 		self.name = name
 		self.args = args
 		self.body = body
 		self.labels = labels
-
-class CodeNode(Node):
+class RawNode(Node):
 	def __init__(self, code):
 		self.code = code
 
-
-#def isnum(token):
-	#return token.isdecimal() or token != "" and token[0] == "-" and token[1:].isdecimal()
 
 def parse_command(tokens):
 	token = tokens.pop(0)
@@ -154,7 +154,9 @@ def parse_command(tokens):
 				args.append(parse_command(tokens))
 		return CallNode(token.text, args)
 	elif typ == Token.MACRODEF:
-		name = token.text
+		if len(tokens) == 0 or tokens[0].typ != Token.IDENT:
+			raise ParseError("macro has no name")
+		name = tokens.pop(0).text
 		if len(tokens) == 0:
 			raise ParseError("macro has no body")
 		args = []
@@ -204,7 +206,7 @@ def parse_command(tokens):
 			code.append(parse_command(tokens))
 		return BlockNode(code)
 	elif typ == Token.STRING:
-		return CodeNode([ord(c) for c in token.text])
+		return RawNode([Literal(ord(c)) for c in token.text])
 	elif typ == "[":
 		code = []
 		while True:
@@ -215,30 +217,39 @@ def parse_command(tokens):
 				break
 			node = parse_command(tokens)
 			if isinstance(node, NumberNode):
-				code.append(node.val % (2**32))
+				code.append(Literal(node.val % (2**32)))
 			elif isinstance(node, ReferenceNode):
 				code.append(Reference(node.name))
 			else:
 				raise ParseError("Raw blocks may only contain numbers and references")
-		return CodeNode(code)
+		return RawNode(code)
 	else:
-		raise ParseError("Invalid start of a command: '{}'".format(token, tokens), linenum)
+		raise ParseError("Invalid start of a command: '{}': '{}'".format(token.typ, token.text), token.linenum)
 
 
 
 class Label:
 	def __init__(self, name):
 		self.name = name
-
 class Reference:
 	def __init__(self, name):
 		self.name = name
+class Command:
+	def __init__(self, command):
+		self.command = command
+class Literal:
+	def __init__(self, val):
+		self.val = val
+
 
 class Substitution:
 	def __init__(self, body, args=None, labels=None):
 		self.body = body
 		self.args = args if args is not None else []
 		self.labels = labels if labels is not None else []
+		
+	def __repr__(self):
+		return "Substitution({}, {}, {})".format(self.body, self.args, self.labels)
 
 scopeid = 1
 
@@ -249,8 +260,8 @@ def compile_tree(node, substitutions, scope):
 		comm = Commands.__dict__.get(node.name.upper())
 		if comm == None:
 			raise Exception("Unknown builtin command {}".format(node.name))
-		code.append(comm)
-	if isinstance(node, CodeNode):
+		code.append(Command(comm))
+	if isinstance(node, RawNode):
 		code.extend(node.code)
 	elif isinstance(node, BlockNode):
 		for command in node.code:
@@ -261,24 +272,25 @@ def compile_tree(node, substitutions, scope):
 		sub = substitutions.get(node.name)
 		if sub == None:
 			raise Exception("Unknown call '{}'".format(node.name))
+		assert isinstance(sub, Substitution), sub
 		if len(sub.args) != len(node.args):
-			raise Exception("macro definition of {} has {} arguments, but call has {} arguments".format(node.name, sub.args, node.args))
-		s = substitutions.copy()
-		s.update({argname: Substitution(CodeNode(compile_tree(argbody, substitutions, scope))) for argname, argbody in zip(sub.args, node.args)})
+			raise Exception("macro definition of {} has {} as arguments, but call has {} as arguments".format(node.name, sub.args, node.args))
+		bodysubs = substitutions.copy()
+		bodysubs.update({argname: Substitution(RawNode(compile_tree(argbody, substitutions.copy(), scope))) for argname, argbody in zip(sub.args, node.args)})
 		global scopeid
 		scopeid += 1
-		s.update({labelname: Substitution(CodeNode([Commands.PUSH, Reference(labelname+":"+str(scopeid))])) for labelname in sub.labels})
-		code.extend(compile_tree(sub.body, s, scopeid))
+		bodysubs.update({labelname: Substitution(RawNode([Command(Commands.PUSH), Reference(labelname+":"+str(scopeid))])) for labelname in sub.labels})
+		code.extend(compile_tree(sub.body, bodysubs, scopeid))
 	elif isinstance(node, NumberNode):
-		code.append(Commands.PUSH)
-		code.append(node.val % (2**32))
+		code.append(Command(Commands.PUSH))
+		code.append(Literal(node.val % (2**32)))
 	elif isinstance(node, LabelNode):
 		name = node.name
 		if scope != 0:
 			name += ":" + str(scope)
 		code.append(Label(name))
 	elif isinstance(node, ReferenceNode):
-		code.append(Commands.PUSH)
+		code.append(Command(Commands.PUSH))
 		code.append(Reference(node.name))
 	return code
 
@@ -299,8 +311,12 @@ def link(unlinked):
 			if location == None:
 				raise Exception("Reference {} without a matching label".format(item.name))
 			code.append(location)
+		elif isinstance(item, Literal):
+			code.append(item.val)
+		elif isinstance(item, Command):
+			code.append(item.command)
 		else:
-			code.append(item)
+			raise Exception("Unknown code type encountered when linking: {}".format(item))
 	return code
 
 def compile_code(text):
