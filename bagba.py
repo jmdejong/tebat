@@ -4,7 +4,7 @@ import base64
 import sys
 import parser
 import run
-import examplecode
+import compileself
 
 
 def main():
@@ -41,7 +41,7 @@ def main():
 	#]
 	
 
-	code = parser.compile_code(examplecode.sourcecode)
+	code = parser.compile_code(compileself.sourcecode)
 	#print([run.command_code_to_str.get(c, c) for c in code])
 	run.run(code)
 

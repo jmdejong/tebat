@@ -3,7 +3,6 @@ sourcecode = """
 
 # macros that translate directly to builtin commands (but know the amount of arguments)
 !putchar(c){c .putchar}
-!putint(i){i .putint}
 !add(a b){a b .add}
 !mult(a b){a b .mult}
 !div(a b){a b .div}
@@ -200,6 +199,21 @@ sourcecode = """
 	print(string)
 	putchar(10)
 }
+!putint(val){
+	val
+	0
+	.swap
+	while(.dup {
+		add(mod(.dup 10) 48)
+		.swap
+		div({ } 10)
+	})
+	.drop
+	while(.dup {
+		.putchar
+	})
+	.drop
+}
 !alloc(amount) {
 	# there's no free yet so it's not necessary to keep track of allocated memory
 	deref(@freeheapstart)
@@ -218,7 +232,6 @@ sourcecode = """
 # place where the code starts executing
 :codestart
 alloc(2048) # reserve 2048 words space for the stack
-putchar(90)
 
 # end with as exit code the return value from main
 exit(call(@main { }))

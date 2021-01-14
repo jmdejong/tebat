@@ -29,12 +29,12 @@ class Commands:
 	NOT = 24
 	NEGATIVE = 25
 	PUTCHAR = 32
-	PUTINT = 33
+	GETCHAR = 33
 	MEMSIZE = 48
 
 
 
-MEM_SIZE = 2**16
+MEM_SIZE = 2**20
 
 
 command_code_to_str = {code: name for name, code in Commands.__dict__.items() if name[0] != "_"}
@@ -141,10 +141,13 @@ def run(code, debug=False):
 			sys.stdout.write(chr(mem[stack_ptr - 1]))
 			sys.stdout.flush()
 			stack_ptr -= 1
-		elif command == Commands.PUTINT:
-			sys.stdout.write(str(mem[stack_ptr - 1]))
-			sys.stdout.flush()
-			stack_ptr -= 1
+		elif command == Commands.GETCHAR:
+			c = sys.stdin.read(1)
+			i = -1
+			if len(c) == 1:
+				i = ord(c)
+			mem[stack_ptr] = i
+			stack_ptr += 1
 		else:
 			print("Invalid command ", command)
 			return -1

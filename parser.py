@@ -1,8 +1,8 @@
 
 from run import Commands
 import sys
-# make the stacktrace for infinite mutual recursion smaller
-sys.setrecursionlimit(40)
+## make the stacktrace for infinite mutual recursion smaller
+#sys.setrecursionlimit(100)
 
 class ParseError(Exception):
 	def __init__(self, message, line=None):
