@@ -371,6 +371,9 @@ function(:vecappend 2 0 {
 	addto(getvar(vec) 1)
 })
 !vecappend(vec val){call(@vecappend {vec val})}
+!vecget(vec idx){arrget(arrget(vec 2) idx)}
+!vecset(vec idx val){arrset(arrget(vec 2) idx val)}
+!veclength(vec){deref(vec)}
 
 !printstr(vecstr){
 	vecstr
@@ -396,24 +399,31 @@ function(:readinput 0 4 {
 	getvar(text) # return a linked list of letters
 })
 
+!Token_ident 1
+!Token_num 2
+!Token_str 3
+!Token_macro 33
+
+!isspace(char) or(or(or(eq(char 9) eq(char 10)) eq(char 13)) eq(char 32))
+!isalpha(char) or(and(geq(char 65) leq(char 90)) and(geq(char 97) leq(char 123)))
+!isidentchar(char) or(isalpha(char) eq(char 95))
+!isdecimal(char) and(geq(char 48) leq(char 57))
 
 function(:tokenize 1 4 {
 	!letters -3
 	!char 2
 	!tokens 3
 	!token 4
-	!last_token 5
-	setvar(tokens 0)
-	while(getvar(letters) {
-		setvar(char deref(getvar(letters)))
-		setvar(letters arrget(getvar(letters) 1))
+	!i 5
+	setvar(tokens vecnew())
+	setvar(i 0)
+	while(neq(getvar(i) veclength(getvar(letters))) {
+		setvar(char vecget(getvar(letters) getvar(i)))
+		addto(varptr(i) 1)
 		putchar(getvar(char))
-		#setvar(token malloc(4))
-		#if(not(getvar(tokens)) {
-			#setvar(tokens getvar(token))
-		#}
+		
 	})
-	0
+	getvar(tokens)
 })
 
 function (:main 0 2 {
@@ -425,7 +435,7 @@ function (:main 0 2 {
 	#.moveto
 	printstr(getvar(input))
 	print("\n")
-	#setvar(tokens call(@tokenize getvar(input)))
+	setvar(tokens call(@tokenize getvar(input)))
 	0
 })
 # some extra space of memory
