@@ -5,6 +5,7 @@ import sys
 import parser
 import run
 import compileself
+import examplecode
 
 
 def main():
@@ -40,8 +41,14 @@ def main():
 		#Commands.EXIT
 	#]
 	
-
-	code = parser.compile_code(compileself.sourcecode)
+	#with open("compileself.tidk") as f:
+		#sourcecode = f.read()
+	sourcecode = examplecode.sourcecode
+	code = parser.compile_code(sourcecode)
+	codebytes = b"".join(command.to_bytes(4, "little") for command in code)
+	with open("compileself.bidk", "wb") as fo:
+		fo.write(codebytes)
+	
 	#print([run.command_code_to_str.get(c, c) for c in code])
 	run.run(code)
 

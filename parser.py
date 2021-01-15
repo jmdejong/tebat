@@ -28,6 +28,18 @@ class Token:
 		self.text = text
 		self.linenum = linenum
 
+def tokenize_char(c, letters):
+	if c == "\\":
+		n = letters.pop(0)
+		if n == "n":
+			return "\n"
+		elif n == "t":
+			return "\t"
+		else:
+			return n
+	else:
+		return c
+
 def tokenize(text):
 	tokens = []
 	linenum = 1
@@ -69,6 +81,14 @@ def tokenize(text):
 			while len(letters) and letters[0].isalpha():
 				tokenl.append(letters.pop(0))
 			typ = ch
+		elif ch == "'":
+			if len(letters) == 0:
+				raise ParseError("unterminated string")
+			c = letters.pop(0)
+			if c == "\n":
+				linenum += 1
+			tokenl.extend(list(str(ord(tokenize_char(c, letters)))))
+			typ = Token.NUM
 		elif ch == '"':
 			while True:
 				if len(letters) == 0:
@@ -78,16 +98,7 @@ def tokenize(text):
 					linenum += 1
 				if c == '"':
 					break
-				elif c == "\\":
-					n = letters.pop(0)
-					if n == "n":
-						tokenl.append("\n")
-					elif n == "t":
-						tokenl.append("\t")
-					else:
-						tokenl.append(n)
-				else:
-					tokenl.append(c)
+				tokenl.append(tokenize_char(c, letters))
 			typ = Token.STRING
 		else:
 			raise ParseError("Unknown token character: '{}'".format(ch), linenum)
@@ -109,33 +120,41 @@ class Node:
 		)
 
 class BuiltinNode(Node):
-	def __init__(self, name):
+	def __init__(self, name, linenum):
 		self.name = name
+		self.linenum = linenum
 class CallNode(Node):
-	def __init__(self, name, args):
+	def __init__(self, name, args, linenum):
 		self.name = name
 		self.args = args
+		self.linenum = linenum
 class NumberNode(Node):
-	def __init__(self, val):
+	def __init__(self, val, linenum):
 		self.val = val
+		self.linenum = linenum
 class BlockNode(Node):
-	def __init__(self, code):
+	def __init__(self, code, linenum):
 		self.code = code
+		self.linenum = linenum
 class LabelNode(Node):
-	def __init__(self, name):
+	def __init__(self, name, linenum):
 		self.name = name
+		self.linenum = linenum
 class ReferenceNode(Node):
-	def __init__(self, name):
+	def __init__(self, name, linenum):
 		self.name = name
+		self.linenum = linenum
 class MacroDefNode(Node):
-	def __init__(self, name, args, body, labels):
+	def __init__(self, name, args, body, labels, linenum):
 		self.name = name
 		self.args = args
 		self.body = body
 		self.labels = labels
+		self.linenum = linenum
 class RawNode(Node):
-	def __init__(self, code):
+	def __init__(self, code, linenum):
 		self.code = code
+		self.linenum = linenum
 
 
 def parse_command(tokens):
@@ -152,7 +171,7 @@ def parse_command(tokens):
 					tokens.pop(0)
 					break
 				args.append(parse_command(tokens))
-		return CallNode(token.text, args)
+		return CallNode(token.text, args, token.linenum)
 	elif typ == Token.MACRODEF:
 		if len(tokens) == 0 or tokens[0].typ != Token.IDENT:
 			raise ParseError("macro has no name")
@@ -186,15 +205,15 @@ def parse_command(tokens):
 		if len(tokens) == 0:
 			raise ParseError("macro has no body")
 		body = parse_command(tokens)
-		return MacroDefNode(name, args, body, labels)
+		return MacroDefNode(name, args, body, labels, token.linenum)
 	elif typ == Token.BUILTIN:
-		return BuiltinNode(token.text)
+		return BuiltinNode(token.text, token.linenum)
 	elif typ == Token.LABEL:
-		return LabelNode(token.text)
+		return LabelNode(token.text, token.linenum)
 	elif typ == Token.REFERENCE:
-		return ReferenceNode(token.text)
+		return ReferenceNode(token.text, token.linenum)
 	elif typ == Token.NUM:
-		return NumberNode(int(token.text))
+		return NumberNode(int(token.text), token.linenum)
 	elif typ == "{":
 		code = []
 		while True:
@@ -204,9 +223,9 @@ def parse_command(tokens):
 				tokens.pop(0)
 				break
 			code.append(parse_command(tokens))
-		return BlockNode(code)
+		return BlockNode(code, token.linenum)
 	elif typ == Token.STRING:
-		return RawNode([Literal(ord(c)) for c in token.text])
+		return RawNode([Literal(ord(c)) for c in token.text], token.linenum)
 	elif typ == "[":
 		code = []
 		while True:
@@ -222,7 +241,7 @@ def parse_command(tokens):
 				code.append(Reference(node.name))
 			else:
 				raise ParseError("Raw blocks may only contain numbers and references")
-		return RawNode(code)
+		return RawNode(code, token.linenum)
 	else:
 		raise ParseError("Invalid start of a command: '{}': '{}'".format(token.typ, token.text), token.linenum)
 
@@ -271,15 +290,17 @@ def compile_tree(node, substitutions, scope):
 	elif isinstance(node, CallNode):
 		sub = substitutions.get(node.name)
 		if sub == None:
-			raise Exception("Unknown call '{}'".format(node.name))
+			raise Exception("Unknown call '{}' line {}".format(node.name, node.linenum))
 		assert isinstance(sub, Substitution), sub
 		if len(sub.args) != len(node.args):
-			raise Exception("macro definition of {} has {} as arguments, but call has {} as arguments".format(node.name, sub.args, node.args))
+			raise Exception("macro definition of {} has {} as arguments, but call has {} as arguments on line {}".format(node.name, sub.args, node.args, node.linenum))
 		bodysubs = substitutions.copy()
-		bodysubs.update({argname: Substitution(RawNode(compile_tree(argbody, substitutions.copy(), scope))) for argname, argbody in zip(sub.args, node.args)})
+		bodysubs.update({
+			argname: Substitution(RawNode(compile_tree(argbody, substitutions.copy(), scope), argbody.linenum)) 
+				for argname, argbody in zip(sub.args, node.args)})
 		global scopeid
 		scopeid += 1
-		bodysubs.update({labelname: Substitution(RawNode([Command(Commands.PUSH), Reference(labelname+":"+str(scopeid))])) for labelname in sub.labels})
+		bodysubs.update({labelname: Substitution(RawNode([Command(Commands.PUSH), Reference(labelname+":"+str(scopeid))], node.linenum)) for labelname in sub.labels})
 		code.extend(compile_tree(sub.body, bodysubs, scopeid))
 	elif isinstance(node, NumberNode):
 		code.append(Command(Commands.PUSH))

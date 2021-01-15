@@ -1,4 +1,3 @@
-sourcecode = r"""
 {
 
 # macros that translate directly to builtin commands (but know the amount of arguments)
@@ -11,7 +10,6 @@ sourcecode = r"""
 !bitor(a b){a b .bitor}
 !shiftup(a b){a b .shiftup}
 !exit(code){code .exit}
-!jump(to){to .jump}
 !jumpifz(condition to){condition to .jumpifz}
 !setstack(to){to .setstack}
 !not(a){a .not}
@@ -40,6 +38,7 @@ sourcecode = r"""
 	.swap
 	.undrop
 }
+!jump(to){jumpifz(0 to)}
 !jumpif(condition to) jumpifz(not(condition) to)
 
 # other macros
@@ -420,6 +419,7 @@ function(:readinput 0 4 {
 !isidentchar(char) or(isalpha(char) eq(char '_))
 !isdecimal(char) and(geq(char '0) leq(char '9))
 
+
 function(:tokenize 4 4 {
 	!letters -6
 	!index -5
@@ -433,7 +433,6 @@ function(:tokenize 4 4 {
 	!callnext tailcall(@tokenize {getvar(letters) getvar(index) getvar(linenum) getvar(parsed)})
 	!notatend neq(getvar(index) veclength(getvar(letters)))
 	!nextchar vecget(getvar(letters) getvar(index))
-	
 	!maketoken(type value){
 		malloc(3)
 		arrset(.dup 0 type)
@@ -445,6 +444,12 @@ function(:tokenize 4 4 {
 		return(getvar(parsed))
 	})
 	setvar(char nextchar)
+	print("reading char :")
+	putchar(getvar(char))
+	printint(getvar(char))
+	print(" at position ")
+	putint(getvar(index))
+	putnl
 	addto(varptr(index) 1)
 	if(isspace(getvar(char)) {
 		if(eq(getvar(char) '\n)
@@ -511,7 +516,49 @@ function(:tokenize 4 4 {
 		})
 		vecappend(getvar(parsed) maketoken(getvar(char) getvar(textvalue)))
 		callnext
-	}) 
+	})
+	
+	!tokenize_char {
+		ifelse (eq(nextchar '\\) {
+			addto(varptr(index) 1)
+			if(not(notatend){
+				jump(@tokenizeEndTooEarly)
+			})
+			ifelse (eq(nextchar 'n)
+				'\n
+				ifelse (eq(nextchar 't)
+					'\t
+					nextchar
+				)
+			)
+		} {
+			nextchar
+		})
+	}
+	if(eq(getvar(char) '') {
+		if (eq(nextchar '\n)
+			addto(varptr(linenum) 1)
+		)
+		if(not(notatend){
+			jump(@tokenizeEndTooEarly)
+		})
+		vecappend(getvar(parsed) maketoken(Token_num tokenize_char))
+		addto(varptr(index) 1)
+		callnext
+	})
+	if(eq(getvar(char) '"){
+		setvar(textvalue vecnew)
+		while(neq(nextchar '"){
+			if(not(notatend){
+				jump(@tokenizeEndTooEarly)
+			})
+			vecappend(getvar(textvalue) tokenize_char)
+			addto(varptr(index) 1)
+		})
+		addto(varptr(index) 1)
+		vecappend(getvar(parsed) maketoken(Token_str getvar(textvalue)))
+		callnext
+	})
 	print("unknown token: '")
 	putchar(getvar(char))
 	print("'")
@@ -519,6 +566,9 @@ function(:tokenize 4 4 {
 	print(" on line ")
 	putint(getvar(linenum))
 	putnl
+	exit(-1)
+	:tokenizeEndTooEarly
+	print("input ended unexpectedly during tokenization")
 	exit(-1)
 })
 !tokenize(letters) call(@tokenize {letters 0 1 vecnew})
@@ -541,6 +591,9 @@ function (:main 0 5 {
 		addto(varptr(i) 1)
 	})
 	putnl
+	print("number of tokens: ")
+	printint(veclength(getvar(tokens)))
+	putnl
 	0
 })
 # some extra space of memory
@@ -562,4 +615,3 @@ function (:main 0 5 {
 :codeend
 [0]
 }
-"""
