@@ -4,8 +4,8 @@ import base64
 import sys
 import parser
 import run
-import compileself
-import examplecode
+#import compileself
+#import examplecode
 
 
 def main():
@@ -41,9 +41,9 @@ def main():
 		#Commands.EXIT
 	#]
 	
-	#with open("compileself.tidk") as f:
-		#sourcecode = f.read()
-	sourcecode = examplecode.sourcecode
+	with open("compileself.tidk") as f:
+		sourcecode = f.read()
+	#sourcecode = examplecode.sourcecode
 	code = parser.compile_code(sourcecode)
 	codebytes = b"".join(command.to_bytes(4, "little") for command in code)
 	with open("compileself.bidk", "wb") as fo:

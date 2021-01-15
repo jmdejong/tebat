@@ -162,6 +162,7 @@
 	# store old stack and old mem location location in temporary globals
 	setref(@memtmp getvar(-1))
 	setref(@calltmp getvar(-2))
+	#calculate and store amount of return values
 	.getstack
 	minus(add(add(deref(@funcmem) getvar(1)) 2))
 	.add
@@ -444,12 +445,6 @@ function(:tokenize 4 4 {
 		return(getvar(parsed))
 	})
 	setvar(char nextchar)
-	print("reading char :")
-	putchar(getvar(char))
-	printint(getvar(char))
-	print(" at position ")
-	putint(getvar(index))
-	putnl
 	addto(varptr(index) 1)
 	if(isspace(getvar(char)) {
 		if(eq(getvar(char) '\n)
@@ -573,15 +568,172 @@ function(:tokenize 4 4 {
 })
 !tokenize(letters) call(@tokenize {letters 0 1 vecnew})
 
+function(:parse 2 6 {
+	!tokens -4
+	!index -3
+	!token 2
+	!node 3
+	!args 4
+	!text 4
+	!labels 5
+	!i 5
+	!body 6
+	
+	!notatend neq(getvar(index) veclength(getvar(tokens)))
+	!isatend not(notatend)
+	!checkend(message) {
+		if(isatend {
+			print(message)
+			print(" on line ")
+			putint(arrget(getvar(token) 2))
+			putnl
+			jump(@parseEndTooEarly)
+		})
+	}
+	!nexttoken vecget(getvar(tokens) getvar(index))
+	!typ deref(getvar(token))
+	!callself {
+		call(@parse{getvar(tokens) getvar(index)})
+		moveto({ } varptr(index))
+	}
+	
+	if (isatend
+		jump(@parseEndTooEarly))
+	setvar(token vecget(getvar(tokens) getvar(index)))
+	addto(varptr(index) 1)
+	
+	if (eq(typ Token_ident) {
+		setvar(args vecnew)
+		if(eq(deref(nexttoken) '() {
+			addto(varptr(index) 1)
+			while(neq(deref(nexttoken) ')) {
+				vecappend(getvar(args) callself)
+				checkend("no closing tag for macro call")
+			})
+			addto(varptr(index) 1)
+		})
+		setvar(node malloc(6))
+		arrset(getvar(node) 0 'C)
+		arrset(getvar(node) 1 arrget(getvar(token) 1))
+		arrset(getvar(node) 2 getvar(args))
+		arrset(getvar(node) 5 arrget(getvar(token) 2))
+		return({getvar(node) getvar(index)})
+	})
+	if (eq(typ Token_macro) {
+		setvar(args vecnew)
+		checkend("macro has no body")
+		if(eq(deref(nexttoken) '() {
+			addto(varptr(index) 1)
+			while(neq(deref(nexttoken) ')){
+				# todo: validate token type
+				vecappend(getvar(args) arrget(nexttoken 1))
+				addto(varptr(index) 1)
+				checkend("no closing tag for macro args")
+			})
+			addto(varptr(index) 1)
+			checkend("macro has no body")
+		})
+		setvar(labels vecnew)
+		if(eq(deref(nexttoken) '() {
+			addto(varptr(index) 1)
+			while(neq(deref(nexttoken) ')){
+				# todo: validate token type
+				vecappend(getvar(labels) arrget(nexttoken 1))
+				addto(varptr(index) 1)
+				checkend("no closing tag for macro labels")
+			})
+			addto(varptr(index) 1)
+			checkend("macro has no body")
+		})
+		setvar(body callself)
+		setvar(node malloc(6))
+		arrset(getvar(node) 0 '!)
+		arrset(getvar(node) 1 arrget(getvar(token) 1))
+		arrset(getvar(node) 2 getvar(args))
+		arrset(getvar(node) 3 getvar(labels))
+		arrset(getvar(node) 4 getvar(body))
+		arrset(getvar(node) 5 arrget(getvar(token) 2))
+		return({getvar(node) getvar(index)})
+	})
+	if(eq(typ '{) {
+		setvar(body vecnew)
+		while(neq(deref(nexttoken) '}){
+			vecappend(getvar(body) callself)
+			checkend("no closing tag for code block")
+		})
+		addto(varptr(index) 1)
+		setvar(node malloc(6))
+		arrset(getvar(node) 0 'B)
+		arrset(getvar(node) 1 getvar(body))
+		arrset(getvar(node) 5 arrget(getvar(token) 2))
+		return({getvar(node) getvar(index)})
+	})
+	if (or(or(or(eq(typ '.) eq(typ ':)) eq(typ '@)) eq(typ 'N)){
+		setvar(node malloc(6))
+		arrset(getvar(node) 0 typ)
+		arrset(getvar(node) 1 arrget(getvar(token) 1))
+		arrset(getvar(node) 5 arrget(getvar(token) 2))
+		return({getvar(node) getvar(index)})
+	})
+	if (eq(typ 'S) {
+		setvar(body vecnew)
+		setvar(i 0)
+		setvar(text arrget(getvar(token) 1))
+		while(neq(getvar(i) veclength(getvar(text))){
+			vecappend(getvar(body) 'L)
+			vecappend(getvar(body) vecget(getvar(text) i))
+			addto(varptr(i) 1)
+		})
+		setvar(node malloc(6))
+		arrset(getvar(node) 0 'R)
+		arrset(getvar(node) 1 getvar(body))
+		arrset(getvar(node) 5 arrget(getvar(token) 2))
+		return({getvar(node) getvar(index)})
+	})
+	if (eq(typ '[){
+		setvar(body vecnew)
+		while(neq(deref(nexttoken) ']){
+			if(eq(deref(nexttoken) 'N){
+				vecappend(getvar(body) 'L)
+				vecappend(getvar(body) arrget(nexttoken 1))
+			})
+			if(eq(deref(nexttoken) '@){
+				vecappend(getvar(body) '@)
+				vecappend(getvar(body) arrget(nexttoken 1))
+			})
+			if(eq(deref(nexttoken) ':){
+				vecappend(getvar(body) ':)
+				vecappend(getvar(body) arrget(nexttoken 1))
+			})
+			addto(varptr(index) 1)
+			checkend("no closing tag for raw block")
+		})
+		setvar(node malloc(6))
+		arrset(getvar(node) 0 'R)
+		arrset(getvar(node) 1 getvar(body))
+		arrset(getvar(node) 5 arrget(getvar(token) 2))
+		return({getvar(node) getvar(index)})
+	})
+	
+	:parseEndTooEarly
+	print("unexpected end of token list encountered")
+	exit(-1)
+})
+!parse(tokens) {
+	call(@parse {tokens 0})
+	.drop
+}
+
 function (:main 0 5 {
 	!input 2
 	!tokens 3
 	!i 4
+	!ast 5
 	setvar(input call(@readinput { }))
 	#call(@readinput { })
 	#input
 	#.moveto
-	printstr(getvar(input))
+	#printstr(getvar(input))
 	putnl
 	setvar(tokens tokenize(getvar(input)))
 	setvar(i 0)
@@ -593,6 +745,10 @@ function (:main 0 5 {
 	putnl
 	print("number of tokens: ")
 	printint(veclength(getvar(tokens)))
+	putnl
+	setvar(ast parse(getvar(tokens)))
+	print("ast type: ")
+	putchar(deref(getvar(ast)))
 	putnl
 	0
 })
