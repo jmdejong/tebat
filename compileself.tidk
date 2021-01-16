@@ -42,6 +42,14 @@
 !jumpif(condition to) jumpifz(not(condition) to)
 
 # other macros
+
+!macrovar(label){
+	# a space of memory in the middle of the code that can be used as a global variable
+	.push
+	label
+	[0]
+	.drop
+}
 !dupsecond {
 	.swap
 	.dup
@@ -158,24 +166,26 @@
 	
 	returns
 }
-!endfunc{
+!endfunc()(:memtmp :returntmp){
+	macrovar(:memtmp)
+	macrovar(:returntmp)
 	# store old stack and old mem location location in temporary globals
-	setref(@memtmp getvar(-1))
+	setref(memtmp getvar(-1))
 	setref(@calltmp getvar(-2))
 	#calculate and store amount of return values
 	.getstack
 	minus(add(add(deref(@funcmem) getvar(1)) 2))
 	.add
-	@returntmp
+	returntmp
 	.moveto
 	
 	# move return values to top of regular stack
 	# source location start
 	.getstack
-	minus(deref(@returntmp))
+	minus(deref(returntmp))
 	.add
 	# amount of return values
-	deref(@returntmp)
+	deref(returntmp)
 	.swap
 	# destination location start
 	sub(deref(@funcmem) add(getvar(0) 2))
@@ -187,10 +197,10 @@
 	.memmove
 	
 	# move stack to end of return values
-	setstack(add(deref(@funcmem) deref(@returntmp)))
+	setstack(add(deref(@funcmem) deref(returntmp)))
 	
 	# recall old stack location
-	setref(@funcmem deref(@memtmp))
+	setref(@funcmem deref(memtmp))
 }
 !returns {
 	endfunc
@@ -209,6 +219,12 @@
 !tailcall(fun val){
 	val
 	tailcalls(fun)
+}
+!arrset(arr index val){
+	setref(add(arr index) val)
+}
+!arrget(arr index){
+	deref(add(arr index))
 }
 !print(string)(:stringstart :stringend){
 	stringstart
@@ -273,21 +289,7 @@
 	putchar(41)
 }
 !putnl putchar('\n)
-!mallocnew(amount) {
-	add(2 deref(@heapend))
-	add(amount 2)
-	moveto(.dup deref(@heapend))
-	arrset(deref(@heapend) 1 1)
-	moveto(add({ } deref(@heapend)) @heapend)
-}
 
-
-!arrset(arr index val){
-	setref(add(arr index) val)
-}
-!arrget(arr index){
-	deref(add(arr index))
-}
 
 # actual code part
 
@@ -306,55 +308,124 @@ setref(@heapend deref(@heapstart))
 # end with as exit code the return value from main
 exit(call(@main { }))
 
-function(:malloc 1 2 {
-	!amount -3
-	!heapptr 2
-	!next 3
-	setvar(heapptr deref(@heapstart))
-	while(neq(getvar(heapptr) deref(@heapend)) { # loop over all chunks
-		if(not(arrget(heapptr 1)) { # chunk is free
-			setvar(next add(heapptr deref(heapptr)))
-			# if the next chunks are free too, merge them into this one
-			while(and(neq(next @heapend) not(arrget(next 1))) {
-				setref(heapptr add(deref(heapptr) deref(next)))
-				setvar(next add(heapptr deref(heapptr)))
-			})
-			if(leq(amount add(deref(heapptr) 2)) {
+
+
+!mallocnew(amount) (:end){
+	add(2 deref(@heapend)) # the eventual return value
+	macrovar(:end)
+	setref(end add(add(amount 3) deref(@heapend)))
+	setref(deref(@heapend) deref(end))
+	arrset(deref(@heapend) 1 0)
+	arrset(deref(end) -1 deref(@heapend))
+	setref(@heapend deref(end))
+}
+!malloc(amount_)(:amount :heapptr :next :end :macroend){
+	macrovar(:amount)
+	setref(amount amount_)
+	macrovar(:heapptr)
+	macrovar(:next)
+	macrovar(:end)
+	if (lt(deref(amount) 1)
+		# minimum size of a block is 4 words (3 meta words + 1 data word)
+		setref(amount 1)
+	)
+	setref(heapptr deref(@freeblocks))
+	while(neq(deref(heapptr) @endblock) { # loop over all chunks
+		if(arrget(deref(heapptr) 1) { # chunk is free
+			setref(next deref(deref(heapptr)))
+			setref(end add(add(deref(heapptr) deref(amount)) 3))
+			if(leq(deref(end) deref(next)) {
 				# enough free space found!
-				# claim this block
-				arrset(heapptr 1 1)
-				if(gt(sub(deref(heapptr) amount) 4) {
+				
+				!nextinlist arrget(deref(heapptr) 1)
+				!previnlist arrget(deref(heapptr) 2)
+				arrset(previnlist 1 nextinlist)
+				arrset(nextinlist 2 previnlist)
+				if(geq(sub(deref(next) deref(end)) 4) {
 					# still a significant free space behind this block
 					# add a new free chunk
-					arrset(heapptr amount sub(deref(heapptr) amount))
-					arrset(heapptr add(amount 1) 1)
-					setref(heapptr amount)
+					arrset(deref(end) 0 deref(next))
+					arrset(deref(next) -1 deref(end))
+					setref(next deref(end))
+					addfreedblock(deref(end))
 				})
-				return(add(heapptr 2))
+				# claim this block
+				arrset(deref(heapptr) 0 deref(next))
+				arrset(deref(heapptr) 1 0)
+				arrset(deref(next) -1 deref(heapptr))
+				add(deref(heapptr) 2)
+				jump(macroend)
 			})
 		})
-		setvar(heapptr add(getvar(heapptr) deref(getvar(heapptr))))
+		setref(heapptr arrget(deref(heapptr) 1))
 	})
 	# no free chunk found that's large enough; allocate some new memory
-	mallocnew(getvar(amount))
-})
-!malloc(amount) call(@malloc amount)
-!free(ptr) {arrset(ptr -1 0)}
-function(:realloc 2 2 {
-	!ptr -4
-	!amount -3
-	!new 2
-	!oldamount 3
-	setvar(new getvar(ptr))
-	setvar(oldamount arrget(getvar(ptr) -2))
-	if(gt(getvar(amount) add(getvar(oldamount) -2)) {
-		setvar(new malloc(getvar(amount)))
-		memmove(getvar(oldamount) getvar(ptr) getvar(new))
-		free(getvar(ptr))
+	mallocnew(deref(amount))
+	:macroend
+}
+!allocatedsize(alloc_ptr) (:allocptr){
+	macrovar(:allocptr)
+	setref(allocptr alloc_ptr)
+	add(-1 sub(arrget(deref(allocptr) -2) deref(allocptr)))
+}
+!addfreedblock(start_) (:start) {
+	macrovar(:start)
+	setref(start start_)
+	# add to front of list of free blocks
+	arrset(deref(start) 1 deref(@freeblocks))
+	arrset(deref(start) 2 @startblock)
+	arrset(deref(@freeblocks) 2 deref(start))
+	setref(@freeblocks deref(start))
+}
+!free(ptr_) (:start :end){
+	macrovar(:start)
+	macrovar(:end)
+	setref(start add(ptr_ -2))
+	setref(end deref(deref(start)))
+	if (and(neq(deref(end) deref(@heapend)) arrget(deref(end) 1)) {
+		# next block is free
+		# remove next block from list of free blocks
+		!nextinlist arrget(deref(end) 1)
+		!previnlist arrget(deref(end) 2)
+		arrset(previnlist 1 nextinlist)
+		arrset(nextinlist 2 previnlist)
+		# merge with next block
+		setref(end deref(deref(end)))
+		setref(deref(start) deref(end))
+		arrset(deref(end) -1 deref(start))
 	})
-	getvar(new)
-})
-!realloc(ptr amount) call(@realloc {ptr amount})
+	if(and(neq(deref(start) deref(@heapstart)) arrget(arrget(deref(start) -1) 1)){
+		# previous block is free
+		# merge with previous block
+		setref(start arrget(deref(start) -1))
+		
+		# remove next block from list of free blocks
+		!nextinlist arrget(deref(start) 1)
+		!previnlist arrget(deref(start) 2)
+		arrset(previnlist 1 nextinlist)
+		arrset(nextinlist 2 previnlist)
+		
+		setref(deref(start) deref(end))
+		arrset(deref(end) -1 deref(start))
+	})
+	addfreedblock(deref(start))
+}
+!realloc(ptr_ amount_) (:ptr :amount :new :oldamount){
+	macrovar(:ptr)
+	setref(ptr ptr_)
+	macrovar(:amount)
+	setref(amount amount_)
+	macrovar(:new)
+	macrovar(:oldamount)
+	setref(new deref(ptr))
+	setref(oldamount allocatedsize(deref(ptr)))
+	if(gt(deref(amount) deref(oldamount)) {
+		setref(new malloc(deref(amount)))
+		memmove(deref(oldamount) deref(ptr) deref(new))
+		free(deref(ptr))
+	})
+	deref(new)
+}
 
 
 
@@ -366,17 +437,12 @@ function(:realloc 2 2 {
 	
 }
 
-function(:vecgrow 1 0 {
-	!vec -3
-	arrset(getvar(vec) 1 mult(arrget(getvar(vec) 1) 2))
-	arrset(getvar(vec) 2 realloc(arrget(getvar(vec) 2) arrget(getvar(vec) 1)))
-})
-
 function(:vecappend 2 0 {
 	!vec -4
 	!val -3
 	if(eq(deref(getvar(vec)) arrget(getvar(vec) 1)) {
-		call(@vecgrow getvar(vec))
+		arrset(getvar(vec) 1 mult(arrget(getvar(vec) 1) 2))
+		arrset(getvar(vec) 2 realloc(arrget(getvar(vec) 2) arrget(getvar(vec) 1)))
 	})
 	arrset(arrget(getvar(vec) 2) deref(getvar(vec)) getvar(val))
 	addto(getvar(vec) 1)
@@ -385,7 +451,19 @@ function(:vecappend 2 0 {
 !vecget(vec idx){arrget(arrget(vec 2) idx)}
 !vecset(vec idx val){arrset(arrget(vec 2) idx val)}
 !veclength(vec){deref(vec)}
-
+function(:vecclone 1 2 {
+	!vec -3
+	!index 2
+	!new 3
+	setvar(index 0)
+	setvar(new vecnew)
+	while(neq(getvar(index) veclength(getvar(vec))){
+		vecappend(getvar(new) vecget(getvar(vec) getvar(index)))
+		addto(varptr(index) 1)
+	})
+	getvar(new)
+})
+!vecclone(vec) call(@vecclone vec)
 !printstr(vecstr){
 	vecstr
 	.dup
@@ -395,7 +473,46 @@ function(:vecappend 2 0 {
 	printmem({ } { })
 }
 
-
+function(:mapgetidx 2 1 {
+	!map -4
+	!key -3
+	!index 2
+	setvar(index 0)
+	while(neq(getvar(index) veclength(getvar(map))){
+		if (eq(getvar(key) vecget(getvar(map) mult(getvar(index) 2))) {
+			return(getvar(index))
+		})
+		addto(varptr(index) 2)
+	})
+	return(-1)
+})
+!mapgetidx(map key) call(@mapgetidx {map key})
+function(:mapget 3 1 {
+	!map -5
+	!key -4
+	!default -3
+	!index 2
+	setvar(index mapgetidx(getvar(map) getvar(key)))
+	ifelse(isnegative(getvar(index))
+		default
+		vecget(getvar(map) mult(getvar(index) 2))
+	)
+})
+!mapget(map key default) call(@mapget {map key default})
+function(:mapset 3 1 {
+	!map -5
+	!key -4
+	!value -3
+	!index 2
+	setvar(index mapgetidx(getvar(map) getvar(key)))
+	ifelse(isnegative(index){
+		vecappend(getvar(map) getvar(key))
+		vecappend(getvar(map) getvar(value))
+	} {
+		vecset(map add(mult(getvar(index) 2) 1) getvar(value))
+	})
+})
+!mapget(map key value) call(@mapget {map key value})
 
 
 function(:readinput 0 4 {
@@ -597,8 +714,10 @@ function(:parse 2 6 {
 		moveto({ } varptr(index))
 	}
 	
-	if (isatend
-		jump(@parseEndTooEarly))
+	if (isatend {
+		println("expected command but token stream ended")
+		jump(@parseEndTooEarly)
+	})
 	setvar(token vecget(getvar(tokens) getvar(index)))
 	addto(varptr(index) 1)
 	
@@ -708,15 +827,21 @@ function(:parse 2 6 {
 			addto(varptr(index) 1)
 			checkend("no closing tag for raw block")
 		})
+		addto(varptr(index) 1)
 		setvar(node malloc(6))
 		arrset(getvar(node) 0 'R)
 		arrset(getvar(node) 1 getvar(body))
 		arrset(getvar(node) 5 arrget(getvar(token) 2))
 		return({getvar(node) getvar(index)})
 	})
+	print("Unknown token type ")
+	putchar(typ)
+	printint(typ)
+	putnl
 	
 	:parseEndTooEarly
-	print("unexpected end of token list encountered")
+	print("Parsing failed")
+	#print("unexpected end of token list encountered")
 	exit(-1)
 })
 !parse(tokens) {
@@ -755,6 +880,14 @@ function (:main 0 5 {
 # some extra space of memory
 # this is used for global constants and variables
 [0]
+:scopeid # used by the compiler to keep assigning new unique scopes
+[1 0]
+:startblock
+[0]
+:freeblocks # start of a linked list of free heap blocks
+[@endblock 0 0]
+:endblock
+[0 0 0 0]
 :heapstart # pointer to the first address that is used for heap memory
 [@codeend]
 :heapend # pointer to the first address that is not part of the used heap
@@ -762,10 +895,6 @@ function (:main 0 5 {
 :funcmem # pointer to the location of the function arguments and local variables
 [0]
 :calltmp # hold the previous call frame when the stack is being manipulated
-[0]
-:memtmp # hold the previous funcmem location when the stack is being manipulateds
-[0]
-:returntmp # hold the amount of return values during a return
 [0]
 # the stack begins here
 :codeend
