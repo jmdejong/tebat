@@ -319,6 +319,32 @@ exit(call(@main { }))
 	arrset(deref(end) -1 deref(@heapend))
 	setref(@heapend deref(end))
 }
+!calcfreeblocklist(size)(){
+	size
+	ifelse(leq(.dup 6)
+		@freeblocks_to6
+		ifelse(leq(.dup 10)
+			@freeblocks_to10
+			ifelse(leq(.dup 100)
+				@freeblocks_to100
+				@freeblocks_rest
+			)
+		)
+	)
+	.swap
+	.drop
+}
+!addfreedblock(start_) (:start :blocklist) {
+	macrovar(:start)
+	setref(start start_)
+	macrovar(:blocklist)
+	setref(blocklist calcfreeblocklist(sub(deref(deref(start)) deref(start))))
+	# add to front of list of free blocks
+	arrset(deref(start) 1 deref(@freeblocks_to6))
+	arrset(deref(start) 2 add(@freeblocks_to6 -1))
+	arrset(deref(@freeblocks_to6) 2 deref(start))
+	setref(@freeblocks_to6 deref(start))
+}
 !malloc(amount_)(:amount :heapptr :next :end :macroend){
 	macrovar(:amount)
 	setref(amount amount_)
@@ -329,7 +355,7 @@ exit(call(@main { }))
 		# minimum size of a block is 4 words (3 meta words + 1 data word)
 		setref(amount 1)
 	)
-	setref(heapptr deref(@freeblocks))
+	setref(heapptr deref(calcfreeblocklist(add(deref(amount) 3))))
 	while(neq(deref(heapptr) @endblock) { # loop over all chunks
 		if(arrget(deref(heapptr) 1) { # chunk is free
 			setref(next deref(deref(heapptr)))
@@ -367,15 +393,6 @@ exit(call(@main { }))
 	macrovar(:allocptr)
 	setref(allocptr alloc_ptr)
 	add(-1 sub(arrget(deref(allocptr) -2) deref(allocptr)))
-}
-!addfreedblock(start_) (:start) {
-	macrovar(:start)
-	setref(start start_)
-	# add to front of list of free blocks
-	arrset(deref(start) 1 deref(@freeblocks))
-	arrset(deref(start) 2 @startblock)
-	arrset(deref(@freeblocks) 2 deref(start))
-	setref(@freeblocks deref(start))
 }
 !free(ptr_) (:start :end){
 	macrovar(:start)
@@ -882,10 +899,21 @@ function (:main 0 5 {
 [0]
 :scopeid # used by the compiler to keep assigning new unique scopes
 [1 0]
-:startblock
+
+
 [0]
-:freeblocks # start of a linked list of free heap blocks
+:freeblocks_to6 # start of a linked list of free heap blocks
 [@endblock 0 0]
+[0]
+:freeblocks_to10 # start of a linked list of free heap blocks
+[@endblock 0 0]
+[0]
+:freeblocks_to100 # start of a linked list of free heap blocks
+[@endblock 0 0]
+[0]
+:freeblocks_rest # start of a linked list of free heap blocks
+[@endblock 0 0]
+
 :endblock
 [0 0 0 0]
 :heapstart # pointer to the first address that is used for heap memory

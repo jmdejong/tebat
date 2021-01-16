@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 
 from run import Commands
 import sys
@@ -40,6 +41,7 @@ def tokenize_char(c, letters):
 	else:
 		return c
 
+
 def tokenize(text):
 	tokens = []
 	linenum = 1
@@ -72,18 +74,21 @@ def tokenize(text):
 		elif ch in ":@":
 			if len(letters) == 0:
 				raise ParseError("line ended unexpectedly")
-			while len(letters) and letters[0].isalnum():
+			if not (letters[0].isalpha() or letters[0] == "_"):
+				raise ParseError("invalid starting character of label/references", linenum)
+			tokenl.append(letters.pop(0))
+			while len(letters) and letters[0].isalnum() or letters[0] == "_":
 				tokenl.append(letters.pop(0))
 			typ = ch
 		elif ch == ".":
 			if len(letters) == 0:
-				raise ParseError("line parsing ended unexpectedly")
+				raise ParseError("line parsing ended unexpectedly", linenum)
 			while len(letters) and letters[0].isalpha():
 				tokenl.append(letters.pop(0))
 			typ = ch
 		elif ch == "'":
 			if len(letters) == 0:
-				raise ParseError("unterminated string")
+				raise ParseError("unterminated string", linenum)
 			c = letters.pop(0)
 			if c == "\n":
 				linenum += 1
@@ -92,7 +97,7 @@ def tokenize(text):
 		elif ch == '"':
 			while True:
 				if len(letters) == 0:
-					raise ParseError("unterminated string")
+					raise ParseError("unterminated string", linenum)
 				c = letters.pop(0)
 				if c == "\n":
 					linenum += 1
@@ -349,3 +354,23 @@ def compile_code(text):
 	
 
 
+def main():
+	if len(sys.argv) > 1:
+		fname = sys.argv[1]
+		with open(fname) as f:
+			sourcecode = f.read()
+		outfname = fname.rpartition(".")[0] + ".bidk"
+	else:
+		sourcecode = sys.stdin.read()
+		outfname = "code.tidk"
+	code = compile_code(sourcecode)
+	codebytes = b"".join(command.to_bytes(4, "little") for command in code)
+	with open(outfname, "wb") as fo:
+		fo.write(codebytes)
+	
+
+
+
+
+if __name__ == "__main__":
+	main()
