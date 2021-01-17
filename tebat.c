@@ -5,7 +5,11 @@
 
 int main(int argc, char *argv[]){
 	
-	FILE *fp = fopen("compileself.bidk", "r");
+	if (argc != 2){
+		fprintf(stderr, "%s takes one filename as argument", argv[0]);
+		return -1;
+	}
+	FILE *fp = fopen(argv[1], "rb");
 	fseek(fp, 0L, SEEK_END);
 	size_t code_size = ftell(fp);
 	rewind(fp);

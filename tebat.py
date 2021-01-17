@@ -41,12 +41,12 @@ def main():
 		#Commands.EXIT
 	#]
 	
-	with open("compileself.tidk") as f:
+	with open("compileself.temat") as f:
 		sourcecode = f.read()
 	#sourcecode = examplecode.sourcecode
 	code = parser.compile_code(sourcecode)
 	codebytes = b"".join(command.to_bytes(4, "little") for command in code)
-	with open("compileself.bidk", "wb") as fo:
+	with open("compileself.tebat", "wb") as fo:
 		fo.write(codebytes)
 	
 	#print([run.command_code_to_str.get(c, c) for c in code])

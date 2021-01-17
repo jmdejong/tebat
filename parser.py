@@ -244,6 +244,8 @@ def parse_command(tokens):
 				code.append(Literal(node.val % (2**32)))
 			elif isinstance(node, ReferenceNode):
 				code.append(Reference(node.name))
+			elif isinstance(node, LabelNode):
+				code.append(Label(node.name))
 			else:
 				raise ParseError("Raw blocks may only contain numbers and references")
 		return RawNode(code, token.linenum)
@@ -359,10 +361,10 @@ def main():
 		fname = sys.argv[1]
 		with open(fname) as f:
 			sourcecode = f.read()
-		outfname = fname.rpartition(".")[0] + ".bidk"
+		outfname = fname.rpartition(".")[0] + ".tebat"
 	else:
 		sourcecode = sys.stdin.read()
-		outfname = "code.tidk"
+		outfname = "code.tebat"
 	code = compile_code(sourcecode)
 	codebytes = b"".join(command.to_bytes(4, "little") for command in code)
 	with open(outfname, "wb") as fo:

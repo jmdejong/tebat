@@ -901,18 +901,26 @@ function (:main 0 5 {
 [1 0]
 
 
-[0]
+[0
 :freeblocks_to6 # start of a linked list of free heap blocks
-[@endblock 0 0]
-[0]
+@endblock
+0
+0]
+[0
 :freeblocks_to10 # start of a linked list of free heap blocks
-[@endblock 0 0]
-[0]
+@endblock
+0
+0]
+[0
 :freeblocks_to100 # start of a linked list of free heap blocks
-[@endblock 0 0]
-[0]
+@endblock
+0
+0]
+[0
 :freeblocks_rest # start of a linked list of free heap blocks
-[@endblock 0 0]
+@endblock
+0
+0]
 
 :endblock
 [0 0 0 0]
