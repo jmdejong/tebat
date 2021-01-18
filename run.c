@@ -7,7 +7,7 @@ typedef size_t usize;
 typedef uint32_t u32;
 
 
-const usize MEM_SIZE = 1<<20;
+const usize MEM_SIZE = 1<<25;
 
 
 #define STACK(n) (mem[stack_ptr-(n)])
@@ -20,7 +20,7 @@ int run(u32 *code, size_t codelen){
 	while(1){
 		Command command = mem[code_ptr];
 		if (code_ptr < 1 || stack_ptr < 1 || code_ptr > (1<<19) || stack_ptr > (1<<19)){
-			printf("code or stack ptr incorrect: %ld %ld", code_ptr, stack_ptr);
+			printf("code or stack ptr incorrect: %ld %ld\n", code_ptr, stack_ptr);
 			free(mem);
 			return -1;
 		}
@@ -73,7 +73,7 @@ int run(u32 *code, size_t codelen){
 		case MOVEFROM:
 			val = mem[stack_ptr - 1];
 			if (val < 1 || val >= MEM_SIZE){
-				printf("move from invalid address %d", val);
+				printf("move from invalid address %d\n", val);
 				free(mem);
 				return -1;
 			}
@@ -82,7 +82,7 @@ int run(u32 *code, size_t codelen){
 		case MOVETO:
 			val = mem[stack_ptr - 1];
 			if (val < 1 || val >= MEM_SIZE){
-				printf("move to invalid address %d", val);
+				printf("move to invalid address %d\n", val);
 				free(mem);
 				return -1;
 			}
@@ -95,7 +95,7 @@ int run(u32 *code, size_t codelen){
 			dest = &mem[mem[stack_ptr - 1]];
 			
 			if (mem[stack_ptr-1] < 1 || mem[stack_ptr-1] + amount >= MEM_SIZE || mem[stack_ptr-2] < 1 || mem[stack_ptr-2] + amount >= MEM_SIZE){
-				printf("memmove to invalid address: %d %d", mem[stack_ptr-1], mem[stack_ptr-2]);
+				printf("memmove to invalid address: %d %d\n", mem[stack_ptr-1], mem[stack_ptr-2]);
 				free(mem);
 				return -1;
 			}

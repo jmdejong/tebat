@@ -1,5 +1,6 @@
 {
 
+
 # macros that translate directly to builtin commands (but know the amount of arguments)
 !putchar(c){c .putchar}
 !add(a b){a b .add}
@@ -15,6 +16,7 @@
 !not(a){a .not}
 !moveto(value ptr){value ptr .moveto}
 !memmove(amount src dest){amount src dest .memmove}
+!shiftup(val by){val by .shiftup}
 
 
 # macros that almost translate directly to builtins
@@ -27,6 +29,7 @@
 	.swap
 	.moveto
 }
+!shiftdown(val by){val minus(by) .shiftup}
 !dup2 {
 	.dup
 	.dup
@@ -149,6 +152,10 @@
 	.getstack
 	@funcmem
 	.moveto
+	if(geq(deref(@funcmem) deref(@heapstart)){
+		println("Stack Overflow!")
+		exit(-1)
+	})
 	
 	# remember argument number
 	nargs
@@ -345,50 +352,49 @@ exit(call(@main { }))
 	arrset(deref(@freeblocks_to6) 2 deref(start))
 	setref(@freeblocks_to6 deref(start))
 }
-!malloc(amount_)(:amount :heapptr :next :end :macroend){
-	macrovar(:amount)
-	setref(amount amount_)
-	macrovar(:heapptr)
-	macrovar(:next)
-	macrovar(:end)
-	if (lt(deref(amount) 1)
+function(:malloc 1 3 {
+	!amount -3
+	!heapptr 2
+	!end 3
+	!next 4
+	if (lt(getvar(amount) 1)
 		# minimum size of a block is 4 words (3 meta words + 1 data word)
-		setref(amount 1)
+		setvar(amount 1)
 	)
-	setref(heapptr deref(calcfreeblocklist(add(deref(amount) 3))))
-	while(neq(deref(heapptr) @endblock) { # loop over all chunks
-		if(arrget(deref(heapptr) 1) { # chunk is free
-			setref(next deref(deref(heapptr)))
-			setref(end add(add(deref(heapptr) deref(amount)) 3))
-			if(leq(deref(end) deref(next)) {
+	setvar(heapptr deref(calcfreeblocklist(add(getvar(amount) 3))))
+	while(neq(getvar(heapptr) @endblock) { # loop over all chunks
+		if(arrget(getvar(heapptr) 1) { # chunk is free
+			setvar(next deref(getvar(heapptr)))
+			setvar(end add(add(getvar(heapptr) getvar(amount)) 3))
+			if(leq(getvar(end) getvar(next)) {
 				# enough free space found!
 				
-				!nextinlist arrget(deref(heapptr) 1)
-				!previnlist arrget(deref(heapptr) 2)
+				!nextinlist arrget(getvar(heapptr) 1)
+				!previnlist arrget(getvar(heapptr) 2)
 				arrset(previnlist 1 nextinlist)
 				arrset(nextinlist 2 previnlist)
-				if(geq(sub(deref(next) deref(end)) 4) {
+				if(geq(sub(getvar(next) getvar(end)) 4) {
 					# still a significant free space behind this block
 					# add a new free chunk
-					arrset(deref(end) 0 deref(next))
-					arrset(deref(next) -1 deref(end))
-					setref(next deref(end))
-					addfreedblock(deref(end))
+					arrset(getvar(end) 0 getvar(next))
+					arrset(getvar(next) -1 getvar(end))
+					setvar(next getvar(end))
+					addfreedblock(getvar(end))
 				})
 				# claim this block
-				arrset(deref(heapptr) 0 deref(next))
-				arrset(deref(heapptr) 1 0)
-				arrset(deref(next) -1 deref(heapptr))
-				add(deref(heapptr) 2)
-				jump(macroend)
+				arrset(getvar(heapptr) 0 getvar(next))
+				arrset(getvar(heapptr) 1 0)
+				arrset(getvar(next) -1 getvar(heapptr))
+				return(add(getvar(heapptr) 2))
+				
 			})
 		})
-		setref(heapptr arrget(deref(heapptr) 1))
+		setvar(heapptr arrget(getvar(heapptr) 1))
 	})
 	# no free chunk found that's large enough; allocate some new memory
-	mallocnew(deref(amount))
-	:macroend
-}
+	mallocnew(getvar(amount))
+})
+!malloc(amount) call(@malloc amount)
 !allocatedsize(alloc_ptr) (:allocptr){
 	macrovar(:allocptr)
 	setref(allocptr alloc_ptr)
@@ -437,6 +443,7 @@ exit(call(@main { }))
 	setref(new deref(ptr))
 	setref(oldamount allocatedsize(deref(ptr)))
 	if(gt(deref(amount) deref(oldamount)) {
+		# todo: sty to see if a free block is following
 		setref(new malloc(deref(amount)))
 		memmove(deref(oldamount) deref(ptr) deref(new))
 		free(deref(ptr))
@@ -444,15 +451,34 @@ exit(call(@main { }))
 	deref(new)
 }
 
-
-
-!vecnew{
-	malloc(3)
-	setref(.dup 0)
-	arrset(.dup 1 8)
-	arrset(.dup 2 malloc(8))
-	
+!clonestruct(src size)(:clone){
+	macrovar(:clone)
+	setref(clone malloc(size))
+	memmove(size src deref(clone))
+	deref(clone)
 }
+
+!pair(first second){
+	malloc(2)
+	setref(.dup first)
+	arrset(.dup 1 second)
+}
+!triple(first second third){
+	malloc(3)
+	setref(.dup first)
+	arrset(.dup 1 second)
+	arrset(.dup 2 third)
+}
+!quadruple(first second third fourth){
+	malloc(4)
+	setref(.dup first)
+	arrset(.dup 1 second)
+	arrset(.dup 2 third)
+	arrset(.dup 3 fourth)
+}
+
+
+!vecnew triple(0 8 malloc(8))
 
 function(:vecappend 2 0 {
 	!vec -4
@@ -463,8 +489,9 @@ function(:vecappend 2 0 {
 	})
 	arrset(arrget(getvar(vec) 2) deref(getvar(vec)) getvar(val))
 	addto(getvar(vec) 1)
+	
 })
-!vecappend(vec val){call(@vecappend {vec val})}
+!vecappend(vec val) call(@vecappend {vec val})
 !vecget(vec idx){arrget(arrget(vec 2) idx)}
 !vecset(vec idx val){arrset(arrget(vec 2) idx val)}
 !veclength(vec){deref(vec)}
@@ -481,6 +508,50 @@ function(:vecclone 1 2 {
 	getvar(new)
 })
 !vecclone(vec) call(@vecclone vec)
+!vecextend(vec_ src_)(:vec :src :index){
+	macrovar(:index)
+	macrovar(:src)
+	macrovar(:vec)
+	setref(index 0)
+	setref(vec vec_)
+	setref(src src_)
+	while(lt(deref(index) veclength(deref(src))) {
+		
+		vecappend(deref(vec) vecget(deref(src) deref(index)))
+		addto(index 1)
+	})
+}
+function(:veceq 2 1 {
+	!vec1 -4
+	!vec2 -3
+	!i 2
+	ifelse(neq(veclength(getvar(vec1)) veclength(getvar(vec2))){
+		0
+	}{
+		setvar(i 0)
+		while(neq(getvar(i) veclength(getvar(vec1))) {
+			if(neq(vecget(getvar(vec1) getvar(i)) vecget(getvar(vec2) getvar(i))) {
+				return(0)
+			})
+			addto(varptr(i) 1)
+		})
+		1
+	})
+})
+!veceq(vec1 vec2) {call(@veceq {vec1 vec2})}
+		
+!veciter(vec_ item body)(:vec :index){
+	macrovar(:index)
+	macrovar(:vec)
+	setref(vec vec_)
+	setref(index 0)
+	while(neq(deref(index) veclength(deref(vec))){
+		setref(item vecget(deref(vec) deref(index)))
+		body
+		addto(index 1)
+	})
+}
+
 !printstr(vecstr){
 	vecstr
 	.dup
@@ -496,7 +567,7 @@ function(:mapgetidx 2 1 {
 	!index 2
 	setvar(index 0)
 	while(neq(getvar(index) veclength(getvar(map))){
-		if (eq(getvar(key) vecget(getvar(map) mult(getvar(index) 2))) {
+		if (veceq(getvar(key) vecget(getvar(map) getvar(index))) {
 			return(getvar(index))
 		})
 		addto(varptr(index) 2)
@@ -511,8 +582,8 @@ function(:mapget 3 1 {
 	!index 2
 	setvar(index mapgetidx(getvar(map) getvar(key)))
 	ifelse(isnegative(getvar(index))
-		default
-		vecget(getvar(map) mult(getvar(index) 2))
+		getvar(default)
+		vecget(getvar(map) add(getvar(index) 1))
 	)
 })
 !mapget(map key default) call(@mapget {map key default})
@@ -522,14 +593,14 @@ function(:mapset 3 1 {
 	!value -3
 	!index 2
 	setvar(index mapgetidx(getvar(map) getvar(key)))
-	ifelse(isnegative(index){
+	ifelse(isnegative(getvar(index)){
 		vecappend(getvar(map) getvar(key))
 		vecappend(getvar(map) getvar(value))
 	} {
-		vecset(map add(mult(getvar(index) 2) 1) getvar(value))
+		vecset(getvar(map) add(getvar(index) 1) getvar(value))
 	})
 })
-!mapget(map key value) call(@mapget {map key value})
+!mapset(map key value) call(@mapset {map key value})
 
 
 function(:readinput 0 4 {
@@ -544,10 +615,13 @@ function(:readinput 0 4 {
 	getvar(text) # return a linked list of letters
 })
 
-!Token_ident 'I
-!Token_num 'N
-!Token_str 'S
-!Token_macro '!
+!Tokentype_ident 'I
+!Tokentype_num 'N
+!Tokentype_str 'S
+!Tokentype_macro '!
+!Tokentype_label ':
+!Tokentype_reference '@
+!Tokentype_builtin '.
 
 !isspace(char) or(or(or(eq(char '\t) eq(char '\n)) eq(char '\r)) eq(char ' ))
 !isalpha(char) or(and(geq(char 'A) leq(char 'Z)) and(geq(char 'a) leq(char 'z)))
@@ -568,12 +642,7 @@ function(:tokenize 4 4 {
 	!callnext tailcall(@tokenize {getvar(letters) getvar(index) getvar(linenum) getvar(parsed)})
 	!notatend neq(getvar(index) veclength(getvar(letters)))
 	!nextchar vecget(getvar(letters) getvar(index))
-	!maketoken(type value){
-		malloc(3)
-		arrset(.dup 0 type)
-		arrset(.dup 1 value)
-		arrset(.dup 2 getvar(linenum))
-	}
+	!addtoken(type value) vecappend(getvar(parsed) triple(type value getvar(linenum)))
 	
 	if(not(notatend) {
 		return(getvar(parsed))
@@ -607,20 +676,19 @@ function(:tokenize 4 4 {
 			addto(varptr(numvalue) sub(getvar(char) '\n))
 			addto(varptr(index) 1)
 		})
-		vecappend(getvar(parsed) maketoken(Token_num getvar(numvalue)))
+		addtoken(Tokentype_num getvar(numvalue))
 		callnext
 	})
-	if(and(eq(getvar(char) 45) and(notatend isdecimal(nextchar))) {
+	if(and(eq(getvar(char) '-) and(notatend isdecimal(nextchar))) {
 		# negative number
 		setvar(numvalue add(getvar(char) 0))
 		while( and(notatend isdecimal(nextchar)) {
-			#setvar(char nextchar)
 			setvar(numvalue mult(getvar(numvalue) 10))
 			addto(varptr(numvalue) sub(nextchar '0))
 			addto(varptr(index) 1)
 		})
 		setvar(numvalue minus(getvar(numvalue)))
-		vecappend(getvar(parsed) maketoken(Token_num getvar(numvalue)))
+		addtoken(Tokentype_num getvar(numvalue))
 		callnext
 	})
 	if(isidentchar(getvar(char)) {
@@ -630,20 +698,30 @@ function(:tokenize 4 4 {
 			vecappend(getvar(textvalue) nextchar)
 			addto(varptr(index) 1)
 		})
-		vecappend(getvar(parsed) maketoken(Token_ident getvar(textvalue)))
+		addtoken(Tokentype_ident getvar(textvalue))
 		callnext
 	})
 	if(or(or(or(or(or( eq(getvar(char) '() eq(getvar(char) '))) eq(getvar(char) '[)) eq(getvar(char) '])) eq(getvar(char) '{)) eq(getvar(char) '})){ # brackets or exclamation mark
-		vecappend(getvar(parsed) maketoken(getvar(char) getvar(char)))
+		addtoken(getvar(char) getvar(char))
 		callnext
 	})
 	if(or(or(or(eq(getvar(char) ':) eq(getvar(char) '@)) eq(getvar(char) '.)) eq(getvar(char) '!)) {
 		setvar(textvalue vecnew)
-		while(and(notatend isidentchar(nextchar)) {
+		if(or(not(notatend) not(isidentchar(nextchar))) {
+			print("token '")
+			putchar(getvar(char))
+			print("' must be followerd by a letter or underscore; not '")
+			putchar(nextchar)
+			print("'\n")
+			jump(@tokenizeEndTooEarly)
+		})
+		vecappend(getvar(textvalue) nextchar)
+		addto(varptr(index) 1)
+		while(and(notatend or(isidentchar(nextchar) isdecimal(nextchar))) {
 			vecappend(getvar(textvalue) nextchar)
 			addto(varptr(index) 1)
 		})
-		vecappend(getvar(parsed) maketoken(getvar(char) getvar(textvalue)))
+		addtoken(getvar(char) getvar(textvalue))
 		callnext
 	})
 	
@@ -655,9 +733,12 @@ function(:tokenize 4 4 {
 			})
 			ifelse (eq(nextchar 'n)
 				'\n
-				ifelse (eq(nextchar 't)
-					'\t
-					nextchar
+				ifelse (eq(nextchar 'r)
+					'\r
+					ifelse (eq(nextchar 't)
+						'\t
+						nextchar
+					)
 				)
 			)
 		} {
@@ -671,7 +752,7 @@ function(:tokenize 4 4 {
 		if(not(notatend){
 			jump(@tokenizeEndTooEarly)
 		})
-		vecappend(getvar(parsed) maketoken(Token_num tokenize_char))
+		addtoken(Tokentype_num tokenize_char)
 		addto(varptr(index) 1)
 		callnext
 	})
@@ -685,7 +766,7 @@ function(:tokenize 4 4 {
 			addto(varptr(index) 1)
 		})
 		addto(varptr(index) 1)
-		vecappend(getvar(parsed) maketoken(Token_str getvar(textvalue)))
+		addtoken(Tokentype_str getvar(textvalue))
 		callnext
 	})
 	print("unknown token: '")
@@ -697,21 +778,38 @@ function(:tokenize 4 4 {
 	putnl
 	exit(-1)
 	:tokenizeEndTooEarly
-	print("input ended unexpectedly during tokenization")
+	print("tokenization failed on line ")
+	printint(getvar(linenum))
+	putnl
 	exit(-1)
 })
 !tokenize(letters) call(@tokenize {letters 0 1 vecnew})
+
+
+!Nodetype_call 'C
+!Nodetype_builtin Tokentype_builtin
+!Nodetype_macro '!
+!Nodetype_block 'B
+!Nodetype_raw 'R
+!Nodetype_num Tokentype_num
+!Nodetype_reference Tokentype_reference
+!Nodetype_label Tokentype_label
+
+
+!Codetype_literal 'L
+!Codetype_command '.
+!Codetype_reference '@
+!Codetype_label ':
 
 function(:parse 2 6 {
 	!tokens -4
 	!index -3
 	!token 2
-	!node 3
+	!body 3
 	!args 4
 	!text 4
 	!labels 5
 	!i 5
-	!body 6
 	
 	!notatend neq(getvar(index) veclength(getvar(tokens)))
 	!isatend not(notatend)
@@ -721,8 +819,11 @@ function(:parse 2 6 {
 			print(" on line ")
 			putint(arrget(getvar(token) 2))
 			putnl
-			jump(@parseEndTooEarly)
+			jump(@parse_failed)
 		})
+	}
+	!returnnode(typ data extra){
+		return({quadruple(typ data extra arrget(getvar(token) 2)) getvar(index)})
 	}
 	!nexttoken vecget(getvar(tokens) getvar(index))
 	!typ deref(getvar(token))
@@ -733,12 +834,12 @@ function(:parse 2 6 {
 	
 	if (isatend {
 		println("expected command but token stream ended")
-		jump(@parseEndTooEarly)
+		jump(@parse_failed)
 	})
 	setvar(token vecget(getvar(tokens) getvar(index)))
 	addto(varptr(index) 1)
 	
-	if (eq(typ Token_ident) {
+	if (eq(typ Tokentype_ident) {
 		setvar(args vecnew)
 		if(eq(deref(nexttoken) '() {
 			addto(varptr(index) 1)
@@ -748,20 +849,22 @@ function(:parse 2 6 {
 			})
 			addto(varptr(index) 1)
 		})
-		setvar(node malloc(6))
-		arrset(getvar(node) 0 'C)
-		arrset(getvar(node) 1 arrget(getvar(token) 1))
-		arrset(getvar(node) 2 getvar(args))
-		arrset(getvar(node) 5 arrget(getvar(token) 2))
-		return({getvar(node) getvar(index)})
+		returnnode(
+			Nodetype_call
+			arrget(getvar(token) 1)
+			getvar(args)
+		)
 	})
-	if (eq(typ Token_macro) {
+	if (eq(typ Tokentype_macro) {
 		setvar(args vecnew)
 		checkend("macro has no body")
 		if(eq(deref(nexttoken) '() {
 			addto(varptr(index) 1)
 			while(neq(deref(nexttoken) ')){
-				# todo: validate token type
+				if(neq(arrget(nexttoken 0) Tokentype_ident) {
+					println("macro argument names must be identifiers")
+					jump(@parse_failed)
+				})
 				vecappend(getvar(args) arrget(nexttoken 1))
 				addto(varptr(index) 1)
 				checkend("no closing tag for macro args")
@@ -773,7 +876,10 @@ function(:parse 2 6 {
 		if(eq(deref(nexttoken) '() {
 			addto(varptr(index) 1)
 			while(neq(deref(nexttoken) ')){
-				# todo: validate token type
+				if(neq(arrget(nexttoken 0) Tokentype_label) {
+					println("macro labels must be labels")
+					jump(@parse_failed)
+				})
 				vecappend(getvar(labels) arrget(nexttoken 1))
 				addto(varptr(index) 1)
 				checkend("no closing tag for macro labels")
@@ -782,14 +888,11 @@ function(:parse 2 6 {
 			checkend("macro has no body")
 		})
 		setvar(body callself)
-		setvar(node malloc(6))
-		arrset(getvar(node) 0 '!)
-		arrset(getvar(node) 1 arrget(getvar(token) 1))
-		arrset(getvar(node) 2 getvar(args))
-		arrset(getvar(node) 3 getvar(labels))
-		arrset(getvar(node) 4 getvar(body))
-		arrset(getvar(node) 5 arrget(getvar(token) 2))
-		return({getvar(node) getvar(index)})
+		returnnode(
+			Nodetype_macro
+			arrget(getvar(token) 1)
+			triple(getvar(args) getvar(labels) getvar(body))
+		)
 	})
 	if(eq(typ '{) {
 		setvar(body vecnew)
@@ -798,67 +901,67 @@ function(:parse 2 6 {
 			checkend("no closing tag for code block")
 		})
 		addto(varptr(index) 1)
-		setvar(node malloc(6))
-		arrset(getvar(node) 0 'B)
-		arrset(getvar(node) 1 getvar(body))
-		arrset(getvar(node) 5 arrget(getvar(token) 2))
-		return({getvar(node) getvar(index)})
+		returnnode(
+			Nodetype_block
+			getvar(body)
+			0
+		)
 	})
-	if (or(or(or(eq(typ '.) eq(typ ':)) eq(typ '@)) eq(typ 'N)){
-		setvar(node malloc(6))
-		arrset(getvar(node) 0 typ)
-		arrset(getvar(node) 1 arrget(getvar(token) 1))
-		arrset(getvar(node) 5 arrget(getvar(token) 2))
-		return({getvar(node) getvar(index)})
+	if (or(or(or(eq(typ Tokentype_builtin) eq(typ Tokentype_label)) eq(typ Tokentype_reference)) eq(typ Tokentype_num)){
+		returnnode(
+			typ
+			arrget(getvar(token) 1)
+			0
+		)
 	})
-	if (eq(typ 'S) {
+	if (eq(typ Tokentype_str) {
 		setvar(body vecnew)
 		setvar(i 0)
 		setvar(text arrget(getvar(token) 1))
 		while(neq(getvar(i) veclength(getvar(text))){
-			vecappend(getvar(body) 'L)
-			vecappend(getvar(body) vecget(getvar(text) i))
+			vecappend(getvar(body) pair(Codetype_literal vecget(getvar(text) i)))
 			addto(varptr(i) 1)
 		})
-		setvar(node malloc(6))
-		arrset(getvar(node) 0 'R)
-		arrset(getvar(node) 1 getvar(body))
-		arrset(getvar(node) 5 arrget(getvar(token) 2))
-		return({getvar(node) getvar(index)})
+		returnnode(
+			Nodetype_raw
+			getvar(body)
+			0
+		)
 	})
 	if (eq(typ '[){
 		setvar(body vecnew)
 		while(neq(deref(nexttoken) ']){
-			if(eq(deref(nexttoken) 'N){
-				vecappend(getvar(body) 'L)
-				vecappend(getvar(body) arrget(nexttoken 1))
-			})
-			if(eq(deref(nexttoken) '@){
-				vecappend(getvar(body) '@)
-				vecappend(getvar(body) arrget(nexttoken 1))
-			})
-			if(eq(deref(nexttoken) ':){
-				vecappend(getvar(body) ':)
-				vecappend(getvar(body) arrget(nexttoken 1))
-			})
+			ifelse(eq(deref(nexttoken) Tokentype_num)
+				vecappend(getvar(body) pair(Codetype_literal arrget(nexttoken 1)))
+				ifelse(eq(deref(nexttoken) Tokentype_reference)
+					vecappend(getvar(body) pair(Codetype_reference arrget(nexttoken 1)))
+					ifelse(eq(deref(nexttoken) Tokentype_label)
+						vecappend(getvar(body) pair(Codetype_label arrget(nexttoken 1)))
+					{
+						print("incorrect type in literal block: ")
+						putchar(deref(nexttoken))
+						putnl
+						jump(@parse_failed)
+					})
+				)
+			)
 			addto(varptr(index) 1)
 			checkend("no closing tag for raw block")
 		})
 		addto(varptr(index) 1)
-		setvar(node malloc(6))
-		arrset(getvar(node) 0 'R)
-		arrset(getvar(node) 1 getvar(body))
-		arrset(getvar(node) 5 arrget(getvar(token) 2))
-		return({getvar(node) getvar(index)})
+		returnnode(
+			Nodetype_raw
+			getvar(body)
+			0
+		)
 	})
 	print("Unknown token type ")
 	putchar(typ)
 	printint(typ)
 	putnl
 	
-	:parseEndTooEarly
-	print("Parsing failed")
-	#print("unexpected end of token list encountered")
+	:parse_failed
+	println("Parsing failed")
 	exit(-1)
 })
 !parse(tokens) {
@@ -866,32 +969,184 @@ function(:parse 2 6 {
 	.drop
 }
 
+!Command_PUSH 3
+
+!compile_tree(code node substitutions scope) call(@compile_tree {code node substitutions scope})
+function(:compile_tree 4 6 {
+	!code -6
+	!node -5
+	!substitutions -4
+	!scope -3
+	!code 2
+	!item 3
+	!i 3
+	!cursub 4
+	!bodysubs 5
+	!name 6
+	!subcode 7
+	
+	!nodetype deref(getvar(node))
+#	print(" compiling a ")
+#	putchar(nodetype)
+#	putnl
+	
+	setvar(code vecnew)
+	
+	if (eq(nodetype Nodetype_builtin){
+		vecappend(getvar(code) pair(Codetype_command arrget(getvar(node) 1)))
+		returns
+	})
+	if (eq(nodetype Nodetype_raw){
+		vecextend(getvar(code) arrget(getvar(node) 1))
+		returns
+	})
+	if (eq(nodetype Nodetype_block){
+		!subcommands arrget(getvar(node) 1)
+		setvar(i 0)
+		while(lt(getvar(i) veclength(subcommands)){ # veciter won't work here because of the recursion
+			compile_tree(getvar(code) vecget(subcommands getvar(i)) getvar(substitutions) getvar(scope))
+			addto(varptr(i) 1)
+		})
+		returns
+	})
+	if (eq(nodetype Nodetype_macro){
+		mapset(getvar(substitutions) arrget(getvar(node) 1) arrget(getvar(node) 2))
+		returns
+	})
+	if (eq(nodetype Nodetype_call){
+		!_callnode_name arrget(getvar(node) 1)
+		!_callnode_args arrget(getvar(node) 2)
+		
+		setvar(cursub mapget(getvar(substitutions) _callnode_name 0))
+		if (eq(getvar(cursub) 0) {
+			print("call to unknown macro '")
+			printstr(_callnode_name)
+			print("'\n")
+			jump(@compile_tree_failed)
+		})
+		!_substitution_args arrget(getvar(cursub) 0)
+		!_substitution_labels arrget(getvar(cursub) 1)
+		!_substitution_body arrget(getvar(cursub) 2)
+		if (neq(veclength(_callnode_args) veclength(_substitution_args)) {
+			printint(getvar(cursub))
+			printint(arrget(getvar(cursub) 0))
+			printint(deref(82))
+			print("macro call for '")
+			printstr(_callnode_name)
+			print("' has ")
+			putint(veclength(_callnode_args))
+			print(" arguments but macro has ")
+			putint(veclength(_substitution_args))
+			print(" arguments\n")
+			jump(@compile_tree_failed)
+		})
+		setvar(bodysubs vecclone(getvar(substitutions)))
+		setvar(i 0)
+		while(neq(getvar(i) veclength(_callnode_args)) {
+			setvar(subcode vecnew)
+			compile_tree(getvar(subcode) vecget(_callnode_args getvar(i)) vecclone(getvar(substitutions)) getvar(scope))
+			mapset(
+				getvar(bodysubs)
+				vecget(_substitution_args getvar(i)) 
+				triple(
+					vecnew
+					vecnew
+					quadruple(Nodetype_raw getvar(subcode) 0 arrget(getvar(node) 3))
+				)
+			)
+			addto(varptr(i) 1)
+		})
+		addto(@scopeid 1)
+		
+		veciter(_substitution_labels varptr(item) {
+			setvar(subcode vecnew)
+			vecappend(getvar(subcode) pair(Codetype_command Command_PUSH))
+			setvar(name vecclone(getvar(item)))
+			vecappend(getvar(name) ':)
+			vecappend(getvar(name) deref(@scopeid))
+			vecappend(getvar(subcode) pair(Codetype_reference getvar(name)))
+			mapset(
+				getvar(bodysubs)
+				getvar(item)
+				triple(
+					vecnew
+					vecnew
+					quadruple(Nodetype_raw getvar(subcode) 0 arrget(getvar(node) 3))
+				)
+			)
+		})
+		
+		compile_tree(getvar(code) _substitution_body getvar(bodysubs) deref(@scopeid))
+		returns
+	})
+	
+	
+	if (eq(nodetype Nodetype_num){
+		vecappend(getvar(code) pair(Codetype_command Command_PUSH))
+		vecappend(getvar(code) pair(Codetype_literal arrget(getvar(node) 1)))
+		returns
+	})
+	if (eq(nodetype Nodetype_reference){
+		vecappend(getvar(code) pair(Codetype_command Command_PUSH))
+		vecappend(getvar(code) pair(Codetype_reference arrget(getvar(node) 1)))
+		returns
+	})
+	if (eq(nodetype Nodetype_label){
+		setvar(subcode vecclone(arrget(getvar(node) 1)))
+		if(getvar(scope){
+			vecappend(getvar(subcode) ':)
+			vecappend(getvar(subcode) getvar(scope))
+		})
+		vecappend(getvar(code) pair(Codetype_label getvar(subcode)))
+		returns
+	})
+	
+	print("Unknown AST node type '")
+	putchar(nodetype)
+	print("'")
+	printint(nodetype)
+	putnl
+	
+	:compile_tree_failed
+	print("compiling the AST failed ")
+	printint(arrget(getvar(node) 3))
+	putnl
+	exit(-1)
+})
+
 function (:main 0 5 {
 	!input 2
 	!tokens 3
-	!i 4
+	!token 4
 	!ast 5
+	!code 6
+	
 	setvar(input call(@readinput { }))
-	#call(@readinput { })
-	#input
-	#.moveto
-	#printstr(getvar(input))
-	putnl
+	putint(veclength(getvar(input)))
+	println(" characters of input read")
+	
 	setvar(tokens tokenize(getvar(input)))
-	setvar(i 0)
-	while(neq(getvar(i) veclength(getvar(tokens))) {
-		putchar(arrget(vecget(getvar(tokens) getvar(i)) 0))
+	veciter(getvar(tokens) varptr(token) {
+		ifelse (eq(arrget(getvar(token) 0) Tokentype_ident) {
+			printstr(arrget(getvar(token) 1))
+		} {
+			putchar(arrget(getvar(token) 0))
+		})
 		putchar(' )
-		addto(varptr(i) 1)
 	})
 	putnl
 	print("number of tokens: ")
 	printint(veclength(getvar(tokens)))
 	putnl
+	
 	setvar(ast parse(getvar(tokens)))
 	print("ast type: ")
 	putchar(deref(getvar(ast)))
 	putnl
+	
+	setvar(code vecnew)
+	compile_tree(getvar(code) getvar(ast) vecnew 0)
+	
 	0
 })
 # some extra space of memory
@@ -935,4 +1190,7 @@ function (:main 0 5 {
 # the stack begins here
 :codeend
 [0]
+
+#ada bison cplusplus dlang elixir forth geany harold inside joking kill main new over poop quit restart rrrrody Riding startx towards under visual work xylophone yonder zealous
+
 }

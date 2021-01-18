@@ -36,6 +36,8 @@ def tokenize_char(c, letters):
 			return "\n"
 		elif n == "t":
 			return "\t"
+		elif n == "r":
+			return "\r"
 		else:
 			return n
 	else:
@@ -171,7 +173,7 @@ def parse_command(tokens):
 			tokens.pop(0)
 			while True:
 				if len(tokens) == 0:
-					raise ParseError("no matching close tag for macro call arguments", linenum)
+					raise ParseError("no matching close tag for macro call arguments", token.linenum)
 				if tokens[0].typ == ")":
 					tokens.pop(0)
 					break
@@ -188,7 +190,7 @@ def parse_command(tokens):
 			tokens.pop(0)
 			while True:
 				if len(tokens) == 0:
-					raise ParseError("no matching close tag for macro arguments")
+					raise ParseError("no matching close tag for macro arguments", token.linenum)
 				t = tokens.pop(0)
 				if t.typ == ")":
 					break
@@ -200,15 +202,15 @@ def parse_command(tokens):
 			tokens.pop(0)
 			while True:
 				if len(tokens) == 0:
-					raise ParseError("no matching close tag for macro labels")
+					raise ParseError("no matching close tag for macro labels", token.linenum)
 				t = tokens.pop(0)
 				if t.typ == ")":
 					break
 				if t.typ != Token.LABEL:
-					raise ParseError("non label in labels field")
+					raise ParseError("non label in labels field", token.linenum)
 				labels.append(t.text)
 		if len(tokens) == 0:
-			raise ParseError("macro has no body")
+			raise ParseError("macro has no body", token.linenum)
 		body = parse_command(tokens)
 		return MacroDefNode(name, args, body, labels, token.linenum)
 	elif typ == Token.BUILTIN:
@@ -223,7 +225,7 @@ def parse_command(tokens):
 		code = []
 		while True:
 			if len(tokens) == 0:
-				raise ParseError("No matching close tag for a code block")
+				raise ParseError("No matching close tag for a code block", token.linenum)
 			if tokens[0].typ == "}":
 				tokens.pop(0)
 				break
@@ -235,7 +237,7 @@ def parse_command(tokens):
 		code = []
 		while True:
 			if len(tokens) == 0:
-				raise ParseError("No matching close tag for a raw block")
+				raise ParseError("No matching close tag for a raw block", token.linenum)
 			if tokens[0].typ == "]":
 				tokens.pop(0)
 				break
@@ -247,7 +249,7 @@ def parse_command(tokens):
 			elif isinstance(node, LabelNode):
 				code.append(Label(node.name))
 			else:
-				raise ParseError("Raw blocks may only contain numbers and references")
+				raise ParseError("Raw blocks may only contain numbers and references", token.linenum)
 		return RawNode(code, token.linenum)
 	else:
 		raise ParseError("Invalid start of a command: '{}': '{}'".format(token.typ, token.text), token.linenum)
@@ -285,7 +287,7 @@ def compile_tree(node, substitutions, scope):
 	if isinstance(node, BuiltinNode):
 		comm = Commands.__dict__.get(node.name.upper())
 		if comm == None:
-			raise Exception("Unknown builtin command {}".format(node.name))
+			raise Exception("Unknown builtin command {} on line {}".format(node.name, node.linenum))
 		code.append(Command(comm))
 	if isinstance(node, RawNode):
 		code.extend(node.code)
@@ -297,7 +299,7 @@ def compile_tree(node, substitutions, scope):
 	elif isinstance(node, CallNode):
 		sub = substitutions.get(node.name)
 		if sub == None:
-			raise Exception("Unknown call '{}' line {}".format(node.name, node.linenum))
+			raise Exception("Unknown call '{}' on line {}".format(node.name, node.linenum))
 		assert isinstance(sub, Substitution), sub
 		if len(sub.args) != len(node.args):
 			raise Exception("macro definition of {} has {} as arguments, but call has {} as arguments on line {}".format(node.name, sub.args, node.args, node.linenum))
