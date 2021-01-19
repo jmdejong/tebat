@@ -357,6 +357,13 @@ exit(call(@main { }))
 	arrset(deref(@freeblocks_to6) 2 deref(start))
 	setref(@freeblocks_to6 deref(start))
 }
+!removefreeblock_u(blockstart){
+	!nextinlist arrget(blockstart 1)
+	!previnlist arrget(blockstart 2)
+	arrset(previnlist 1 nextinlist)
+	arrset(nextinlist 2 previnlist)
+}
+
 function(:malloc 1 3 {
 	!amount -3
 	!heapptr 2
@@ -373,11 +380,7 @@ function(:malloc 1 3 {
 			setvar(end add(add(getvar(heapptr) getvar(amount)) 3))
 			if(leq(getvar(end) getvar(next)) {
 				# enough free space found!
-				
-				!nextinlist arrget(getvar(heapptr) 1)
-				!previnlist arrget(getvar(heapptr) 2)
-				arrset(previnlist 1 nextinlist)
-				arrset(nextinlist 2 previnlist)
+				removefreeblock_u(getvar(heapptr))
 				if(geq(sub(getvar(next) getvar(end)) 4) {
 					# still a significant free space behind this block
 					# add a new free chunk
@@ -400,10 +403,20 @@ function(:malloc 1 3 {
 	mallocnew(getvar(amount))
 })
 !malloc(amount) call(@malloc amount)
-!allocatedsize(alloc_ptr) (:allocptr){
-	macrovar(:allocptr)
-	setref(allocptr alloc_ptr)
-	add(-1 sub(arrget(deref(allocptr) -2) deref(allocptr)))
+!alloc_block_start(alloc_ptr) add(alloc_ptr -2)
+!alloc_block_size(block_start){
+	block_start
+	.dup
+	.movefrom
+	.swap
+	.neg
+	.add
+}
+!allocatedsize(alloc_ptr){
+	add(alloc_block_size(alloc_block_start(alloc_ptr)) -3)
+}
+!is_free_block(block_start){
+	and(neq(block_start deref(@heapend)) arrget(block_start 1))
 }
 !free(ptr_) (:start :end){
 	macrovar(:start)
@@ -413,10 +426,7 @@ function(:malloc 1 3 {
 	if (and(neq(deref(end) deref(@heapend)) arrget(deref(end) 1)) {
 		# next block is free
 		# remove next block from list of free blocks
-		!nextinlist arrget(deref(end) 1)
-		!previnlist arrget(deref(end) 2)
-		arrset(previnlist 1 nextinlist)
-		arrset(nextinlist 2 previnlist)
+		removefreeblock_u(deref(end))
 		# merge with next block
 		setref(end deref(deref(end)))
 		setref(deref(start) deref(end))
@@ -428,33 +438,61 @@ function(:malloc 1 3 {
 		setref(start arrget(deref(start) -1))
 		
 		# remove next block from list of free blocks
-		!nextinlist arrget(deref(start) 1)
-		!previnlist arrget(deref(start) 2)
-		arrset(previnlist 1 nextinlist)
-		arrset(nextinlist 2 previnlist)
+		removefreeblock_u(deref(start))
 		
 		setref(deref(start) deref(end))
 		arrset(deref(end) -1 deref(start))
 	})
 	addfreedblock(deref(start))
 }
-!realloc(ptr_ amount_) (:ptr :amount :new :oldamount){
-	macrovar(:ptr)
-	setref(ptr ptr_)
-	macrovar(:amount)
-	setref(amount amount_)
-	macrovar(:new)
-	macrovar(:oldamount)
-	setref(new deref(ptr))
-	setref(oldamount allocatedsize(deref(ptr)))
-	if(gt(deref(amount) deref(oldamount)) {
-		# todo: sty to see if a free block is following
-		setref(new malloc(deref(amount)))
-		memmove(deref(oldamount) deref(ptr) deref(new))
-		free(deref(ptr))
+function(:realloc 2 2 {
+	!ptr -4
+	!amount -3
+	!new 2
+	!oldamount 3
+	
+	!blockstart alloc_block_start(getvar(ptr))
+	
+	setvar(new getvar(ptr))
+	
+	!allocsize allocatedsize(getvar(new))
+	
+	setvar(oldamount allocsize)
+	
+	while(gt(getvar(amount) allocsize) {
+		ifelse(is_free_block(deref(blockstart)) {
+			# next block is free; merge it
+			removefreeblock_u(deref(blockstart))
+			setref(blockstart deref(deref(blockstart)))
+			arrset(deref(blockstart) -1 blockstart)
+		} {
+			# no free block following; allocate new
+			setvar(new malloc(getvar(amount)))
+			memmove(getvar(oldamount) getvar(ptr) getvar(new))
+			free(getvar(ptr))
+		})
 	})
-	deref(new)
-}
+	getvar(new)
+})
+!realloc(ptr amount) call(@realloc {ptr amount})
+#!realloc(ptr_ amount_) (:ptr :amount :new :oldamount){
+#	macrovar(:ptr)
+#	setref(ptr ptr_)
+#	macrovar(:amount)
+#	setref(amount amount_)
+#	macrovar(:new)
+#	macrovar(:oldamount)
+#	setref(new deref(ptr))
+#	setref(oldamount allocatedsize(deref(ptr)))
+#	if(gt(deref(amount) deref(oldamount)) {
+#		if(arrget(alloc_block_start(deref(ptr)) 1) {
+#			#next block is free
+#		setref(new malloc(deref(amount)))
+#		memmove(deref(oldamount) deref(ptr) deref(new))
+#		free(deref(ptr))
+#	})
+#	deref(new)
+#}
 
 !clonestruct(src size)(:clone){
 	macrovar(:clone)
