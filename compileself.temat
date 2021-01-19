@@ -475,24 +475,6 @@ function(:realloc 2 2 {
 	getvar(new)
 })
 !realloc(ptr amount) call(@realloc {ptr amount})
-#!realloc(ptr_ amount_) (:ptr :amount :new :oldamount){
-#	macrovar(:ptr)
-#	setref(ptr ptr_)
-#	macrovar(:amount)
-#	setref(amount amount_)
-#	macrovar(:new)
-#	macrovar(:oldamount)
-#	setref(new deref(ptr))
-#	setref(oldamount allocatedsize(deref(ptr)))
-#	if(gt(deref(amount) deref(oldamount)) {
-#		if(arrget(alloc_block_start(deref(ptr)) 1) {
-#			#next block is free
-#		setref(new malloc(deref(amount)))
-#		memmove(deref(oldamount) deref(ptr) deref(new))
-#		free(deref(ptr))
-#	})
-#	deref(new)
-#}
 
 !clonestruct(src size)(:clone){
 	macrovar(:clone)
@@ -521,48 +503,38 @@ function(:realloc 2 2 {
 }
 
 
-!vecnew triple(0 8 malloc(8))
+!vecnew pair(0 malloc(8))
 
+!vecresize_u(vec newsize){
+	arrset(vec 0 newsize)
+	while(gt(arrget(vec 0) allocatedsize(arrget(vec 1)))
+		arrset(vec 1 realloc(arrget(vec 1) mult(allocatedsize(arrget(vec 1)) 2)))
+	)
+}
+!veclength(vec){deref(vec)}
+!vecget(vec idx){arrget(arrget(vec 1) idx)}
+!vecset(vec idx val){arrset(arrget(vec 1) idx val)}
 function(:vecappend 2 0 {
 	!vec -4
 	!val -3
-	if(eq(deref(getvar(vec)) arrget(getvar(vec) 1)) {
-		arrset(getvar(vec) 1 mult(arrget(getvar(vec) 1) 2))
-		arrset(getvar(vec) 2 realloc(arrget(getvar(vec) 2) arrget(getvar(vec) 1)))
-	})
-	arrset(arrget(getvar(vec) 2) deref(getvar(vec)) getvar(val))
-	addto(getvar(vec) 1)
-	
+	vecresize_u(getvar(vec) add(veclength(getvar(vec)) 1))
+	vecset(getvar(vec) add(veclength(getvar(vec)) -1) getvar(val))
 })
 !vecappend(vec val) call(@vecappend {vec val})
-!vecget(vec idx){arrget(arrget(vec 2) idx)}
-!vecset(vec idx val){arrset(arrget(vec 2) idx val)}
-!veclength(vec){deref(vec)}
-function(:vecclone 1 2 {
+function(:vecclone 1 1 {
 	!vec -3
-	!index 2
-	!new 3
-	setvar(index 0)
+	!new 2
 	setvar(new vecnew)
-	while(neq(getvar(index) veclength(getvar(vec))){
-		vecappend(getvar(new) vecget(getvar(vec) getvar(index)))
-		addto(varptr(index) 1)
-	})
+	vecresize_u(getvar(new) veclength(getvar(vec)))
+	memmove(veclength(getvar(vec)) arrget(getvar(vec) 1) arrget(getvar(new) 1))
 	getvar(new)
 })
 !vecclone(vec) call(@vecclone vec)
-!vecextend(vec_ src_)(:vec :src :index){
-	macrovar(:index)
-	macrovar(:src)
-	macrovar(:vec)
-	setref(index 0)
-	setref(vec vec_)
-	setref(src src_)
-	while(lt(deref(index) veclength(deref(src))) {
-		
-		vecappend(deref(vec) vecget(deref(src) deref(index)))
-		addto(index 1)
-	})
+!vecextend_u(vec src)(:len){
+	macrovar(:len)
+	setref(len veclength(vec))
+	vecresize_u(vec add(deref(len) veclength(src)))
+	memmove(veclength(src) arrget(src 1) add(arrget(vec 1) deref(len)))
 }
 function(:veceq 2 1 {
 	!vec1 -4
@@ -598,7 +570,7 @@ function(:veceq 2 1 {
 !printstr(vecstr){
 	vecstr
 	.dup
-	arrget({ } 2)
+	arrget({ } 1)
 	.swap
 	.movefrom
 	printmem({ } { })
@@ -1040,7 +1012,7 @@ function(:compile_tree 4 6 {
 		returns
 	})
 	if (eq(nodetype Nodetype_raw){
-		vecextend(getvar(code) arrget(getvar(node) 1))
+		vecextend_u(getvar(code) arrget(getvar(node) 1))
 		returns
 	})
 	if (eq(nodetype Nodetype_block){

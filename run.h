@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-int run(uint32_t *code, size_t codelen);
 
 typedef enum Command {
 	NOOP = 1,
@@ -34,3 +33,21 @@ typedef enum Command {
 	GETCHAR = 33,
 	MEMSIZE = 48
 } Command;
+
+typedef struct Execution {
+	size_t code_ptr;
+	size_t stack_ptr;
+	uint32_t *mem;
+} Execution;
+
+typedef enum Result{
+	Ok,
+	Error,
+	Stop
+} Result;
+
+
+Result run(uint32_t *code, size_t codelen);
+
+
+

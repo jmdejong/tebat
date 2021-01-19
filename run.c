@@ -3,180 +3,189 @@
 #include <string.h>
 #include "run.h"
 
-typedef size_t usize;
-typedef uint32_t u32;
+
+const size_t MEM_SIZE = 1<<25;
 
 
-const usize MEM_SIZE = 1<<25;
-
-
-#define STACK(n) (mem[stack_ptr-(n)])
-
-int run(u32 *code, size_t codelen){
-	u32 *mem = malloc(sizeof(u32) * MEM_SIZE);
-	usize code_ptr = code[1];
-	usize stack_ptr = code[2];
+Execution Execution_new(uint32_t *code, size_t codelen){
+	
+	uint32_t *mem = malloc(sizeof(uint32_t) * MEM_SIZE);
+	size_t code_ptr = code[1];
+	size_t stack_ptr = code[2];
 	memcpy(mem, code, codelen);
-	while(1){
-		Command command = mem[code_ptr];
-		if (code_ptr < 1 || stack_ptr < 1 || code_ptr > (1<<19) || stack_ptr > (1<<19)){
-			printf("code or stack ptr incorrect: %ld %ld\n", code_ptr, stack_ptr);
-			free(mem);
-			return -1;
-		}
-		++code_ptr;
-		u32 tmp, amount, *src, *dest, val;
-		int inchar;
-		int32_t returncode;
-		switch(command){
+	Execution ex = {code_ptr, stack_ptr, mem};
+	return ex;
+}
+
+
+
+static inline Result run_instr(Execution *ex, int8_t *errcode){
+	if (ex->code_ptr < 1 || ex->stack_ptr < 1 || ex->code_ptr > (1<<19) || ex->stack_ptr > (1<<19)){
+		printf("code or stack ptr incorrect: %ld %ld\n", ex->code_ptr, ex->stack_ptr);
+		return Error;
+	}
+	Command command = ex->mem[ex->code_ptr];
+	++(ex->code_ptr);
+	uint32_t tmp, amount, *src, *dest, val;
+	int inchar;
+	int32_t returncode;
+	switch(command){
 		case NOOP:
-			break;
+			return Ok;
 		case EXIT:
-			returncode = (int32_t)mem[--stack_ptr];
-			free(mem);
-			return returncode;
+			returncode = (int32_t)ex->mem[--ex->stack_ptr];
+			*errcode = returncode;
+			return Stop;
 		case PUSH:
-			mem[stack_ptr++] = mem[code_ptr++];
-			break;
+			ex->mem[ex->stack_ptr++] = ex->mem[ex->code_ptr++];
+			return Ok;
 		case DUP:
-			mem[stack_ptr] = mem[stack_ptr-1];
-			++stack_ptr;
-			break;
+			ex->mem[ex->stack_ptr] = ex->mem[ex->stack_ptr-1];
+			++ex->stack_ptr;
+			return Ok;
 		case DROP:
-			--stack_ptr;
-			break;
+			--ex->stack_ptr;
+			return Ok;
 		case UNDROP:
-			++stack_ptr;
-			break;
+			++ex->stack_ptr;
+			return Ok;
 		case SWAP:
-			tmp = mem[stack_ptr-(2)];
-			mem[stack_ptr-(2)] = mem[stack_ptr-(1)];
-			mem[stack_ptr-(1)] = tmp;
-			break;
+			tmp = ex->mem[ex->stack_ptr-(2)];
+			ex->mem[ex->stack_ptr-(2)] = ex->mem[ex->stack_ptr-(1)];
+			ex->mem[ex->stack_ptr-(1)] = tmp;
+			return Ok;
 		case JUMP:
-			code_ptr = mem[stack_ptr - 1];
-			--stack_ptr;
-			break;
+			ex->code_ptr = ex->mem[ex->stack_ptr - 1];
+			--ex->stack_ptr;
+			return Ok;
 		case JUMPIFZ:
-			if (mem[stack_ptr - 2] == 0){
-				code_ptr = mem[stack_ptr - 1];
+			if (ex->mem[ex->stack_ptr - 2] == 0){
+				ex->code_ptr = ex->mem[ex->stack_ptr - 1];
 			}
-			stack_ptr -= 2;
-			break;
+			ex->stack_ptr -= 2;
+			return Ok;
 		case GETSTACK:
-			mem[stack_ptr] = stack_ptr;
-			++stack_ptr;
-			break;
+			ex->mem[ex->stack_ptr] = ex->stack_ptr;
+			++ex->stack_ptr;
+			return Ok;
 		case SETSTACK:
-			stack_ptr = mem[stack_ptr - 1];
-			break;
+			ex->stack_ptr = ex->mem[ex->stack_ptr - 1];
+			return Ok;
 		case MOVEFROM:
-			val = mem[stack_ptr - 1];
+			val = ex->mem[ex->stack_ptr - 1];
 			if (val < 1 || val >= MEM_SIZE){
 				printf("move from invalid address %d\n", val);
-				free(mem);
-				return -1;
+				return Error;
 			}
-			mem[stack_ptr - 1] = mem[val];
-			break;
+			ex->mem[ex->stack_ptr - 1] = ex->mem[val];
+			return Ok;
 		case MOVETO:
-			val = mem[stack_ptr - 1];
+			val = ex->mem[ex->stack_ptr - 1];
 			if (val < 1 || val >= MEM_SIZE){
 				printf("move to invalid address %d\n", val);
-				free(mem);
-				return -1;
+				return Error;
 			}
-			mem[val] = mem[stack_ptr - 2];
-			stack_ptr -= 2;
-			break;
+			ex->mem[val] = ex->mem[ex->stack_ptr - 2];
+			ex->stack_ptr -= 2;
+			return Ok;
 		case MEMMOVE:
-			amount = mem[stack_ptr - 3];
-			src = &mem[mem[stack_ptr - 2]];
-			dest = &mem[mem[stack_ptr - 1]];
+			amount = ex->mem[ex->stack_ptr - 3];
+			src = &ex->mem[ex->mem[ex->stack_ptr - 2]];
+			dest = &ex->mem[ex->mem[ex->stack_ptr - 1]];
 			
-			if (mem[stack_ptr-1] < 1 || mem[stack_ptr-1] + amount >= MEM_SIZE || mem[stack_ptr-2] < 1 || mem[stack_ptr-2] + amount >= MEM_SIZE){
-				printf("memmove to invalid address: %d %d\n", mem[stack_ptr-1], mem[stack_ptr-2]);
-				free(mem);
-				return -1;
+			if (ex->mem[ex->stack_ptr-1] < 1 || ex->mem[ex->stack_ptr-1] + amount >= MEM_SIZE || ex->mem[ex->stack_ptr-2] < 1 || ex->mem[ex->stack_ptr-2] + amount >= MEM_SIZE){
+				printf("ex->memmove to invalid address: %d %d\n", ex->mem[ex->stack_ptr-1], ex->mem[ex->stack_ptr-2]);
+				return Error;
 			}
-			memcpy(dest, src, sizeof(u32) * amount);
-			stack_ptr -= 3;
-			break;
+			memcpy(dest, src, sizeof(uint32_t) * amount);
+			ex->stack_ptr -= 3;
+			return Ok;
 		case ADD:
-			mem[stack_ptr - 2] = (mem[stack_ptr - 2] + mem[stack_ptr - 1]);
-			stack_ptr -= 1;
-			break;
+			ex->mem[ex->stack_ptr - 2] = (ex->mem[ex->stack_ptr - 2] + ex->mem[ex->stack_ptr - 1]);
+			ex->stack_ptr -= 1;
+			return Ok;
 		case NEG:
-			mem[stack_ptr - 1] = (uint32_t)-(int32_t)mem[stack_ptr - 1];
-			break;
+			ex->mem[ex->stack_ptr - 1] = (uint32_t)-(int32_t)ex->mem[ex->stack_ptr - 1];
+			return Ok;
 		case MULT:
-			mem[stack_ptr - 2] = (mem[stack_ptr - 2] * mem[stack_ptr - 1]);
-			stack_ptr -= 1;
-			break;
+			ex->mem[ex->stack_ptr - 2] = (ex->mem[ex->stack_ptr - 2] * ex->mem[ex->stack_ptr - 1]);
+			ex->stack_ptr -= 1;
+			return Ok;
 		case DIV:
-			if (mem[stack_ptr-1] == 0){
-				free(mem);
+			if (ex->mem[ex->stack_ptr-1] == 0){
 				printf("division by zero\n");
-				return -1;
+				return Error;
 			}
-			mem[stack_ptr - 2] /= mem[stack_ptr-1];
-			stack_ptr -= 1;
-			break;
+			ex->mem[ex->stack_ptr - 2] /= ex->mem[ex->stack_ptr-1];
+			ex->stack_ptr -= 1;
+			return Ok;
 		case MOD:
-			if (mem[stack_ptr-1] == 0){
-				free(mem);
+			if (ex->mem[ex->stack_ptr-1] == 0){
 				printf("division remainder by zero\n");
-				return -1;
+				return Error;
 			}
-			mem[stack_ptr - 2] %= mem[stack_ptr-1];
-			stack_ptr -= 1;
-			break;
+			ex->mem[ex->stack_ptr - 2] %= ex->mem[ex->stack_ptr-1];
+			ex->stack_ptr -= 1;
+			return Ok;
 		case BITOR:
-			stack_ptr -= 1;
-			mem[stack_ptr - 1] = (mem[stack_ptr] | mem[stack_ptr - 1]);
-			break;
+			ex->stack_ptr -= 1;
+			ex->mem[ex->stack_ptr - 1] = (ex->mem[ex->stack_ptr] | ex->mem[ex->stack_ptr - 1]);
+			return Ok;
 		case BITAND:
-			stack_ptr -= 1;
-			mem[stack_ptr - 1] = (mem[stack_ptr] & mem[stack_ptr - 1]);
-			break;
+			ex->stack_ptr -= 1;
+			ex->mem[ex->stack_ptr - 1] = (ex->mem[ex->stack_ptr] & ex->mem[ex->stack_ptr - 1]);
+			return Ok;
 		case SHIFTUP:
-			amount = mem[stack_ptr - 1];
+			amount = ex->mem[ex->stack_ptr - 1];
 			if (amount > 0){
-				mem[stack_ptr - 2] <<= amount;
+				ex->mem[ex->stack_ptr - 2] <<= amount;
 			} else if (amount < 0){
-				mem[stack_ptr - 2] >>= -amount;
+				ex->mem[ex->stack_ptr - 2] >>= -amount;
 			}
-			stack_ptr -= 1;
-			break;
+			ex->stack_ptr -= 1;
+			return Ok;
 		case NOT:
-			mem[stack_ptr - 1] = !mem[stack_ptr - 1];
-			break;
+			ex->mem[ex->stack_ptr - 1] = !ex->mem[ex->stack_ptr - 1];
+			return Ok;
 		case NEGATIVE:
-			mem[stack_ptr - 1] = (int)mem[stack_ptr - 1] < 0;
-			break;
+			ex->mem[ex->stack_ptr - 1] = (int)ex->mem[ex->stack_ptr - 1] < 0;
+			return Ok;
 		case MEMSIZE:
-			mem[stack_ptr] = MEM_SIZE;
-			stack_ptr += 1;
-			break;
+			ex->mem[ex->stack_ptr] = MEM_SIZE;
+			ex->stack_ptr += 1;
+			return Ok;
 		case PUTCHAR:
-			putchar(mem[stack_ptr - 1]);
+			putchar(ex->mem[ex->stack_ptr - 1]);
 			fflush(stdout);
-			stack_ptr -= 1;
-			break;
+			ex->stack_ptr -= 1;
+			return Ok;
 		case GETCHAR:
 			inchar = getchar();
 			if (inchar == EOF){
 				inchar = -1;
 			}
-			mem[stack_ptr] = inchar;
-			stack_ptr += 1;
-			break;
+			ex->mem[ex->stack_ptr] = inchar;
+			ex->stack_ptr += 1;
+			return Ok;
 		default:
 			printf("Invalid command %d\n", command);
-			free(mem);
-			return -1;
-		}
+			return Error;
 	}
-	free(mem);
-	return 0;
+	return Ok;
 }
+
+
+Result run(uint32_t *code, size_t codelen){
+	Execution ex = Execution_new(code, codelen);
+	Result result;
+	int8_t errcode;
+	while((result = run_instr(&ex, &errcode)) == Ok) {
+	}
+	if (result == Error){
+		printf("Interpreter error\n");
+		errcode = -1;
+	}
+	free(ex.mem);
+	return errcode;
+}
+

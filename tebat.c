@@ -15,8 +15,8 @@ int main(int argc, char *argv[]){
 	rewind(fp);
 	uint32_t *code = malloc(sizeof(uint32_t) * code_size + 10);
 	fread(code, sizeof(uint32_t), code_size, fp);
+	fclose(fp);
 	int result = run(code, code_size);
 	free(code);
-	fclose(fp);
 	return result;
 }
