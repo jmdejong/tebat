@@ -134,6 +134,57 @@
 !addto (pos val){
 	setref(pos add(deref(.dup) val))
 }
+
+!print(string)(:stringstart :stringend){
+	stringstart
+	while( neq(.dup stringend) {
+		putchar(deref(.dup))
+		add({ } 1)
+	})
+	jump(stringend)
+	:stringstart
+	string
+	:stringend
+	.drop
+}
+!putnl putchar('\n)
+
+!println(string){
+	print(string)
+	putnl
+}
+!putint(val)(:end){
+	val
+	if(not(.dup){
+		putchar(48)
+		.drop
+		jump(end)
+	})
+	if(isnegative(.dup){
+		putchar(45)
+		.neg
+	})
+	0
+	.swap
+	while(.dup {
+		add(mod(.dup 10) 48)
+		.swap
+		div({ } 10)
+	})
+	.drop
+	while(.dup {
+		.putchar
+	})
+	.drop
+	:end
+}
+!printint(val){
+	val
+	putchar(40)
+	putint({ })
+	putchar(41)
+}
+
 !calls(fun)(:returnpos){
 	returnpos
 	jump(fun)
@@ -143,36 +194,8 @@
 	args
 	calls(fun)
 }
-!function(label nargs nvars body){
-	label
-	# remember old stack location
-	deref(@funcmem)
-	
-	# remember current stack location
-	.getstack
-	@funcmem
-	.moveto
-	if(geq(deref(@funcmem) deref(@heapstart)){
-		println("Stack Overflow!")
-		exit(-1)
-	})
-	
-	# remember argument number
-	nargs
-	# remember number of local variables
-	nvars
-	
-	# reserve space for local variables
-	.dup
-	.getstack
-	.add
-	.setstack
-	.drop
-	# execute function body
-	body
-	
-	returns
-}
+
+
 !endfunc()(:memtmp :returntmp){
 	macrovar(:memtmp)
 	macrovar(:returntmp)
@@ -214,6 +237,37 @@
 	# return to previous position
 	jump(deref(@calltmp))
 }
+
+!function(label nargs nvars body){
+	label
+	# remember old stack location
+	deref(@funcmem)
+	
+	# remember current stack location
+	.getstack
+	@funcmem
+	.moveto
+	if(geq(deref(@funcmem) deref(@heapstart)){
+		println("Stack Overflow!")
+		exit(-1)
+	})
+	
+	# remember argument number
+	nargs
+	# remember number of local variables
+	nvars
+	
+	# reserve space for local variables
+	.dup
+	.getstack
+	.add
+	.setstack
+	.drop
+	# execute function body
+	body
+	
+	returns
+}
 !return(val){
 	val
 	returns
@@ -233,47 +287,6 @@
 !arrget(arr index){
 	deref(add(arr index))
 }
-!print(string)(:stringstart :stringend){
-	stringstart
-	while( neq(.dup stringend) {
-		putchar(deref(.dup))
-		add({ } 1)
-	})
-	jump(stringend)
-	:stringstart
-	string
-	:stringend
-	.drop
-}
-!println(string){
-	print(string)
-	putnl
-}
-!putint(val)(:end){
-	val
-	if(not(.dup){
-		putchar(48)
-		.drop
-		jump(end)
-	})
-	if(isnegative(.dup){
-		putchar(45)
-		.neg
-	})
-	0
-	.swap
-	while(.dup {
-		add(mod(.dup 10) 48)
-		.swap
-		div({ } 10)
-	})
-	.drop
-	while(.dup {
-		.putchar
-	})
-	.drop
-	:end
-}
 !printmem(ptr size){
 	ptr
 	size
@@ -289,14 +302,6 @@
 	.drop
 	.drop
 }
-!printint(val){
-	val
-	putchar(40)
-	putint({ })
-	putchar(41)
-}
-!putnl putchar('\n)
-
 
 # actual code part
 

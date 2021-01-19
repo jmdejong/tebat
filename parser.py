@@ -271,8 +271,9 @@ class Literal:
 
 
 class Substitution:
-	def __init__(self, body, args=None, labels=None):
+	def __init__(self, body, substitutionscope, args=None, labels=None):
 		self.body = body
+		self.substitutionscope = substitutionscope
 		self.args = args if args is not None else []
 		self.labels = labels if labels is not None else []
 		
@@ -295,7 +296,7 @@ def compile_tree(node, substitutions, scope):
 		for command in node.code:
 			code.extend(compile_tree(command, substitutions, scope))
 	elif isinstance(node, MacroDefNode):
-		substitutions[node.name] = Substitution(node.body, node.args, node.labels)
+		substitutions[node.name] = Substitution(node.body, substitutions.copy(), node.args, node.labels)
 	elif isinstance(node, CallNode):
 		sub = substitutions.get(node.name)
 		if sub == None:
@@ -303,13 +304,13 @@ def compile_tree(node, substitutions, scope):
 		assert isinstance(sub, Substitution), sub
 		if len(sub.args) != len(node.args):
 			raise Exception("macro definition of {} has {} as arguments, but call has {} as arguments on line {}".format(node.name, sub.args, node.args, node.linenum))
-		bodysubs = substitutions.copy()
+		bodysubs = sub.substitutionscope.copy()
 		bodysubs.update({
-			argname: Substitution(RawNode(compile_tree(argbody, substitutions.copy(), scope), argbody.linenum)) 
+			argname: Substitution(RawNode(compile_tree(argbody, substitutions.copy(), scope), argbody.linenum), {}) 
 				for argname, argbody in zip(sub.args, node.args)})
 		global scopeid
 		scopeid += 1
-		bodysubs.update({labelname: Substitution(RawNode([Command(Commands.PUSH), Reference(labelname+":"+str(scopeid))], node.linenum)) for labelname in sub.labels})
+		bodysubs.update({labelname: Substitution(RawNode([Command(Commands.PUSH), Reference(labelname+":"+str(scopeid))], node.linenum), {}) for labelname in sub.labels})
 		code.extend(compile_tree(sub.body, bodysubs, scopeid))
 	elif isinstance(node, NumberNode):
 		code.append(Command(Commands.PUSH))
