@@ -137,12 +137,11 @@ static inline Result run_instr(Execution *ex, int8_t *errcode){
 			ex->mem[ex->stack_ptr - 1] = (ex->mem[ex->stack_ptr] & ex->mem[ex->stack_ptr - 1]);
 			return Ok;
 		case SHIFTUP:
-			amount = ex->mem[ex->stack_ptr - 1];
-			if (amount > 0){
-				ex->mem[ex->stack_ptr - 2] <<= amount;
-			} else if (amount < 0){
-				ex->mem[ex->stack_ptr - 2] >>= -amount;
-			}
+			ex->mem[ex->stack_ptr - 2] <<= ex->mem[ex->stack_ptr - 1];
+			ex->stack_ptr -= 1;
+			return Ok;
+		case SHIFTDOWN:
+			ex->mem[ex->stack_ptr - 2] >>= ex->mem[ex->stack_ptr - 1];
 			ex->stack_ptr -= 1;
 			return Ok;
 		case NOT:

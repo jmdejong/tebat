@@ -26,8 +26,9 @@ class Commands:
 	BITOR = 21
 	BITAND = 22
 	SHIFTUP = 23
-	NOT = 24
-	NEGATIVE = 25
+	SHIFTDOWN = 24
+	NOT = 25
+	NEGATIVE = 26
 	PUTCHAR = 32
 	GETCHAR = 33
 	MEMSIZE = 48
@@ -125,11 +126,12 @@ def run(code, debug=False):
 			mem[stack_ptr - 1] = (mem[stack_ptr] & mem[stack_ptr - 1]) % (2**32)
 		elif command == Commands.SHIFTUP:
 			amount = mem[stack_ptr - 1]
-			if amount > 0:
-				mem[stack_ptr - 2] <<= amount
-			elif amount < 0:
-				mem[stack_ptr - 2] >>= -amount
+			mem[stack_ptr - 2] <<= mem[stack_ptr - 1]
 			mem[stack_ptr - 2] %= (2**32)
+			stack_ptr -= 1
+		elif command == Commands.SHIFTDOWN:
+			amount = mem[stack_ptr - 1]
+			mem[stack_ptr - 2] >>= mem[stack_ptr - 1]
 			stack_ptr -= 1
 		elif command == Commands.NOT:
 			mem[stack_ptr - 1] = int(not mem[stack_ptr - 1])

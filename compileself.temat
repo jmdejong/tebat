@@ -10,14 +10,13 @@
 !bitand(a b){a b .bitand}
 !bitor(a b){a b .bitor}
 !shiftup(a b){a b .shiftup}
+!shiftdown(a b){a b .shiftdown}
 !exit(code){code .exit}
 !jumpifz(condition to){condition to .jumpifz}
 !setstack(to){to .setstack}
 !not(a){a .not}
 !moveto(value ptr){value ptr .moveto}
 !memmove(amount src dest){amount src dest .memmove}
-!shiftup(val by){val by .shiftup}
-
 
 # macros that almost translate directly to builtins
 !minus(val){val .neg}
@@ -29,7 +28,6 @@
 	.swap
 	.moveto
 }
-!shiftdown(val by){val minus(by) .shiftup}
 !dup2 {
 	.dup
 	.dup
@@ -304,6 +302,49 @@
 	.drop
 }
 
+
+
+!log2(n){
+	n
+	shiftdown(.dup 16)
+	ifelse(.dup {
+		.swap
+		.drop
+		shiftdown(.dup 8)
+		ifelse(.dup {
+			.swap
+			.drop
+			add(deref(add(@log2table256 {})) 24)
+		}{
+			.drop
+			add(deref(add(@log2table256 {})) 16)
+		})
+	}{
+		.drop
+		shiftdown(.dup 8)
+		ifelse(.dup {
+			.swap
+			.drop
+			add(deref(add(@log2table256 {})) 8)
+		}{
+			.drop
+			deref(add({} @log2table256))
+		})
+	})
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 # actual code part
 
 # some initializer metadata
@@ -333,19 +374,7 @@ exit(call(@main { }))
 	setref(@heapend deref(end))
 }
 !calcfreeblocklist(size)(){
-	size
-	ifelse(leq(.dup 6)
-		@freeblocks_to6
-		ifelse(leq(.dup 10)
-			@freeblocks_to10
-			ifelse(leq(.dup 100)
-				@freeblocks_to100
-				@freeblocks_rest
-			)
-		)
-	)
-	.swap
-	.drop
+	add(mult(log2(size) 4) @freetable)
 }
 !addfreedblock(start_) (:start :blocklist) {
 	macrovar(:start)
@@ -1389,6 +1418,16 @@ function (:main 0 5 {
 :scopeid # used by the compiler to keep assigning new unique scopes
 [1 0]
 
+!T16(n){n n n n n n n n n n n n n n n n}
+
+[0
+:freetable
+@endblock 0 0]
+T16([0 @endblock 0 0])
+T16([0 @endblock 0 0])
+
+
+
 
 [0
 :freeblocks_to6 # start of a linked list of free heap blocks
@@ -1411,6 +1450,8 @@ function (:main 0 5 {
 0
 0]
 
+
+
 :endblock
 [0 0 0 0]
 :heapstart # pointer to the first address that is used for heap memory
@@ -1421,6 +1462,14 @@ function (:main 0 5 {
 [0]
 :calltmp # hold the previous call frame when the stack is being manipulated
 [0]
+
+:log2table256 # see https://graphics.stanford.edu/~seander/bithacks.html#IntegerLogLookup
+[-1 0 1 1 2 2 2 2 3 3 3 3 3 3 3 3]
+T16([4]) T16([5]) T16([5]) T16([6]) T16([6]) T16([6]) T16([6])
+T16([7]) T16([7]) T16([7]) T16([7]) T16([7]) T16([7]) T16([7]) T16([7])
+
+[0]
+
 # the stack begins here
 :codeend
 [0]

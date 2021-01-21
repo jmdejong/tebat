@@ -1,5 +1,6 @@
 {
 
+
 # macros that translate directly to builtin commands (but know the amount of arguments)
 !putchar(c){c .putchar}
 !add(a b){a b .add}
@@ -9,6 +10,7 @@
 !bitand(a b){a b .bitand}
 !bitor(a b){a b .bitor}
 !shiftup(a b){a b .shiftup}
+!shiftdown(val by){val by .shiftdown}
 !exit(code){code .exit}
 !jumpifz(condition to){condition to .jumpifz}
 !setstack(to){to .setstack}
@@ -42,6 +44,15 @@
 !jumpif(condition to) jumpifz(not(condition) to)
 
 # other macros
+
+!ignore(arg) {}
+!macrovar(label){
+	# a space of memory in the middle of the code that can be used as a global variable
+	.push
+	label
+	[0]
+	.drop
+}
 !dupsecond {
 	.swap
 	.dup
@@ -123,93 +134,7 @@
 !addto (pos val){
 	setref(pos add(deref(.dup) val))
 }
-!calls(fun)(:returnpos){
-	returnpos
-	jump(fun)
-	:returnpos
-}
-!call(fun args){
-	args
-	calls(fun)
-}
-!function(label nargs nvars body){
-	label
-	# remember old stack location
-	deref(@funcmem)
-	
-	# remember current stack location
-	.getstack
-	@funcmem
-	.moveto
-	
-	# remember argument number
-	nargs
-	# remember number of local variables
-	nvars
-	
-	# reserve space for local variables
-	.dup
-	.getstack
-	.add
-	.setstack
-	.drop
-	# execute function body
-	body
-	
-	returns
-}
-!endfunc{
-	# store old stack and old mem location location in temporary globals
-	setref(@memtmp getvar(-1))
-	setref(@calltmp getvar(-2))
-	#calculate and store amount of return values
-	.getstack
-	minus(add(add(deref(@funcmem) getvar(1)) 2))
-	.add
-	@returntmp
-	.moveto
-	
-	# move return values to top of regular stack
-	# source location start
-	.getstack
-	minus(deref(@returntmp))
-	.add
-	# amount of return values
-	deref(@returntmp)
-	.swap
-	# destination location start
-	sub(deref(@funcmem) add(getvar(0) 2))
-	# remember destination location for later (because getvar(0) might get overwritten)
-	.dup
-	@funcmem
-	.moveto
-	# actually move the return values
-	.memmove
-	
-	# move stack to end of return values
-	setstack(add(deref(@funcmem) deref(@returntmp)))
-	
-	# recall old stack location
-	setref(@funcmem deref(@memtmp))
-}
-!returns {
-	endfunc
-	# return to previous position
-	jump(deref(@calltmp))
-}
-!return(val){
-	val
-	returns
-}
-!tailcalls(fun){
-	endfunc
-	deref(@calltmp)
-	jump(fun)
-}
-!tailcall(fun val){
-	val
-	tailcalls(fun)
-}
+
 !print(string)(:stringstart :stringend){
 	stringstart
 	while( neq(.dup stringend) {
@@ -222,6 +147,8 @@
 	:stringend
 	.drop
 }
+!putnl putchar('\n)
+
 !println(string){
 	print(string)
 	putnl
@@ -251,6 +178,111 @@
 	.drop
 	:end
 }
+!printint(val){
+	val
+	putchar(40)
+	putint({ })
+	putchar(41)
+}
+
+!calls(fun)(:returnpos){
+	returnpos
+	jump(fun)
+	:returnpos
+}
+!call(fun args){
+	args
+	calls(fun)
+}
+
+
+!endfunc()(:memtmp :returntmp){
+	macrovar(:memtmp)
+	macrovar(:returntmp)
+	# store old stack and old mem location location in temporary globals
+	setref(memtmp getvar(-1))
+	setref(@calltmp getvar(-2))
+	#calculate and store amount of return values
+	.getstack
+	minus(add(add(deref(@funcmem) getvar(1)) 2))
+	.add
+	returntmp
+	.moveto
+	
+	# move return values to top of regular stack
+	# source location start
+	.getstack
+	minus(deref(returntmp))
+	.add
+	# amount of return values
+	deref(returntmp)
+	.swap
+	# destination location start
+	sub(deref(@funcmem) add(getvar(0) 2))
+	# remember destination location for later (because getvar(0) might get overwritten)
+	.dup
+	@funcmem
+	.moveto
+	# actually move the return values
+	.memmove
+	
+	# move stack to end of return values
+	setstack(add(deref(@funcmem) deref(returntmp)))
+	
+	# recall old stack location
+	setref(@funcmem deref(memtmp))
+}
+!returns {
+	endfunc
+	# return to previous position
+	jump(deref(@calltmp))
+}
+
+!function(label nargs nvars body){
+	label
+	# remember old stack location
+	deref(@funcmem)
+	
+	# remember current stack location
+	.getstack
+	@funcmem
+	.moveto
+	
+	# remember argument number
+	nargs
+	# remember number of local variables
+	nvars
+	
+	# reserve space for local variables
+	.dup
+	.getstack
+	.add
+	.setstack
+	.drop
+	# execute function body
+	body
+	
+	returns
+}
+!return(val){
+	val
+	returns
+}
+!tailcalls(fun){
+	endfunc
+	deref(@calltmp)
+	jump(fun)
+}
+!tailcall(fun val){
+	val
+	tailcalls(fun)
+}
+!arrset(arr index val){
+	setref(add(arr index) val)
+}
+!arrget(arr index){
+	deref(add(arr index))
+}
 !printmem(ptr size){
 	ptr
 	size
@@ -266,19 +298,50 @@
 	.drop
 	.drop
 }
-!printint(val){
-	val
-	putchar(40)
-	putint({ })
-	putchar(41)
+
+!log2(n){
+	n
+	shiftdown(.dup 16)
+	ifelse(.dup {
+		.swap
+		.drop
+		shiftdown(.dup 8)
+		ifelse(.dup {
+			.swap
+			.drop
+			add(deref(add(@log2table256 {})) 24)
+		}{
+			.drop
+			add(deref(add(@log2table256 {})) 16)
+		})
+	}{
+		.drop
+		shiftdown(.dup 8)
+		ifelse(.dup {
+			.swap
+			.drop
+			add(deref(add(@log2table256 {})) 8)
+		}{
+			.drop
+			deref(add({} @log2table256))
+		})
+	})
 }
-!putnl putchar('\n)
 
 !alloc(amount) {
 	# there's no free yet so it's not necessary to keep track of allocated memory
 	deref(@freeheapstart)
 	addto(@freeheapstart amount)
 }
+
+
+
+
+
+
+
+
+
 
 # actual code part
 
@@ -390,7 +453,8 @@ function (:gcd 2 0 {
 	tailcall(@gcd {mod(getvar(-3) getvar(-4)) getvar(-4)})
 })
 
-function (:main 0 0 {
+function (:main 0 1 {
+	!i 2
 	# print all printable ascii characters
 	32 # if there is just a number then that number is pushed to the stack
 	while (lt(.dup 127) { # dup copies the top value of the stack
@@ -424,6 +488,24 @@ function (:main 0 0 {
 	print("3^7 = ")
 	putint(call(@pow {3 7}))
 	print("\n")
+	
+	println("log2")
+	setvar(i 1)
+	while(not(isnegative(getvar(i))){
+		putint(getvar(i))
+		putchar(' )
+		putint(log2(getvar(i)))
+		putchar(' )
+		putint(log2(add(getvar(i) 1)))
+		putnl
+		setvar(i add(mult(getvar(i) 2) 1))
+	})
+	println("log done")
+	
+	println("log2 2051")
+	printint(log2(2051))
+	putnl
+	
 	0
 })
 # some extra space of memory
@@ -438,6 +520,13 @@ function (:main 0 0 {
 :memtmp # hold the previous funcmem location when the stack is being manipulateds
 [0]
 :returntmp # hold the amount of return values during a return
+[0]
+:log2table256 # see https://graphics.stanford.edu/~seander/bithacks.html#IntegerLogLookup
+!LT(n){n n n n n n n n n n n n n n n n}
+[-1 0 1 1 2 2 2 2 3 3 3 3 3 3 3 3]
+LT([4]) LT([5]) LT([5]) LT([6]) LT([6]) LT([6]) LT([6])
+LT([7]) LT([7]) LT([7]) LT([7]) LT([7]) LT([7]) LT([7]) LT([7])
+
 [0]
 # the stack begins here
 :codeend
