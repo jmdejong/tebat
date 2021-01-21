@@ -4,16 +4,17 @@
 #include "run.h"
 
 
-const size_t MEM_SIZE = 1<<25;
+const size_t MEM_SIZE = 1<<27;
+const size_t INITIAL_MEM_SIZE = 1 << 27;
 
 
 Execution Execution_new(uint32_t *code, size_t codelen){
 	
-	uint32_t *mem = malloc(sizeof(uint32_t) * MEM_SIZE);
+	uint32_t *mem = malloc(sizeof(uint32_t) * INITIAL_MEM_SIZE);
 	size_t code_ptr = code[1];
 	size_t stack_ptr = code[2];
 	memcpy(mem, code, codelen);
-	Execution ex = {code_ptr, stack_ptr, mem};
+	Execution ex = {code_ptr, stack_ptr, INITIAL_MEM_SIZE, mem};
 	return ex;
 }
 
@@ -26,7 +27,7 @@ static inline Result run_instr(Execution *ex, int8_t *errcode){
 	}
 	Command command = ex->mem[ex->code_ptr];
 	++(ex->code_ptr);
-	uint32_t tmp, amount, *src, *dest, val;
+	uint32_t tmp, amount, *src, *dest, val, *newmem;
 	int inchar;
 	int32_t returncode;
 	switch(command){
@@ -151,9 +152,16 @@ static inline Result run_instr(Execution *ex, int8_t *errcode){
 			ex->mem[ex->stack_ptr - 1] = (int)ex->mem[ex->stack_ptr - 1] < 0;
 			return Ok;
 		case MEMSIZE:
-			ex->mem[ex->stack_ptr] = MEM_SIZE;
+			ex->mem[ex->stack_ptr] = ex->mem_size;
 			ex->stack_ptr += 1;
 			return Ok;
+		case BRK:
+			newmem = realloc(ex->mem, ex->mem[ex->stack_ptr - 1] * sizeof(uint32_t));
+			if (newmem == NULL){
+				ex->mem = newmem;
+				ex->mem_size = ex->mem[ex->stack_ptr - 1];
+			}
+			ex->mem[ex->stack_ptr - 1] = newmem != NULL;
 		case PUTCHAR:
 			putchar(ex->mem[ex->stack_ptr - 1]);
 			fflush(stdout);

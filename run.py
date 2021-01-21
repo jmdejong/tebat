@@ -31,6 +31,7 @@ class Commands:
 	PUTCHAR = 32
 	GETCHAR = 33
 	MEMSIZE = 48
+	BRK = 49
 
 
 
@@ -135,8 +136,12 @@ def run(code, debug=False):
 		elif command == Commands.NEGATIVE:
 			mem[stack_ptr - 1] = int((mem[stack_ptr - 1] & 2**31) != 0)
 		elif command == Commands.MEMSIZE:
-			mem[stack_ptr] = MEM_SIZE
+			mem[stack_ptr] = len(mem)
 			stack_ptr += 1
+		elif command == Commands.BRK:
+			if mem[stack_ptr - 1] > len(mem):
+				mem.extend([0] * mem[stack_ptr - 1] - len(mem))
+			mem[stack_ptr - 1] = 1
 		elif command == Commands.PUTCHAR:
 			sys.stdout.write(chr(mem[stack_ptr - 1]))
 			sys.stdout.flush()

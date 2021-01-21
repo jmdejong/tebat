@@ -31,12 +31,14 @@ typedef enum Command {
 	NEGATIVE = 25,
 	PUTCHAR = 32,
 	GETCHAR = 33,
-	MEMSIZE = 48
+	MEMSIZE = 48,
+	BRK = 49
 } Command;
 
 typedef struct Execution {
 	size_t code_ptr;
 	size_t stack_ptr;
+	size_t mem_size;
 	uint32_t *mem;
 } Execution;
 
