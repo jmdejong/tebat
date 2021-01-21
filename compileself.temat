@@ -502,6 +502,14 @@ function(:realloc 2 2 {
 	arrset(.dup 2 third)
 	arrset(.dup 3 fourth)
 }
+!quintuple(first second third fourth fifth){
+	malloc(5)
+	setref(.dup first)
+	arrset(.dup 1 second)
+	arrset(.dup 2 third)
+	arrset(.dup 3 fourth)
+	arrset(.dup 4 fifth)
+}
 
 
 !vecnew pair(0 malloc(8))
@@ -588,48 +596,6 @@ function(:veceq 2 1 {
 	printmem({ } { })
 }
 
-function(:vecmapgetidx 2 1 {
-	!map -4
-	!key -3
-	!index 2
-	setvar(index 0)
-	while(neq(getvar(index) veclength(getvar(map))){
-		if (veceq(getvar(key) vecget(getvar(map) getvar(index))) {
-			return(getvar(index))
-		})
-		addto(varptr(index) 2)
-	})
-	return(-1)
-})
-!vecmapgetidx(map key) call(@vecmapgetidx {map key})
-function(:vecmapget 3 1 {
-	!map -5
-	!key -4
-	!default -3
-	!index 2
-	setvar(index vecmapgetidx(getvar(map) getvar(key)))
-	ifelse(isnegative(getvar(index))
-		getvar(default)
-		vecget(getvar(map) add(getvar(index) 1))
-	)
-})
-!vecmapget(map key default) call(@vecmapget {map key default})
-function(:vecmapset 3 1 {
-	!map -5
-	!key -4
-	!value -3
-	!index 2
-	setvar(index vecmapgetidx(getvar(map) getvar(key)))
-	ifelse(isnegative(getvar(index)){
-		vecappend(getvar(map) getvar(key))
-		vecappend(getvar(map) getvar(value))
-	} {
-		vecset(getvar(map) add(getvar(index) 1) getvar(value))
-	})
-})
-!vecmapset(map key value) call(@vecmapset {map key value})
-
-
 function(:hashvec 1 2{
 	!vec -3
 	!letter 2
@@ -662,6 +628,73 @@ function(:linkedmapget 3 1 {
 	getvar(default)
 })
 
+
+!treemap_left 0
+!treemap_right 1
+!treemap_key 2
+!treemap_hash 3
+!treemap_value 4
+!treemapnew 0
+function(:treemapget 3 1 {
+	!map -5
+	!key -4
+	!default -3
+	!h 2
+	setvar(h hashvec(getvar(key)))
+	while(getvar(map){
+		if(and(eq(getvar(h) arrget(getvar(map) treemap_hash)) veceq(getvar(key) arrget(getvar(map) treemap_key))) {
+			return(arrget(getvar(map) treemap_value))
+		})
+		setvar(map arrget(
+			getvar(map)
+			ifelse(lt(getvar(h) arrget(getvar(map) treemap_hash))
+				treemap_left
+				treemap_right
+			)
+		))
+	})
+	getvar(default)
+})
+!treemapget(map key default) call(@treemapget {map key default})
+!treemapinsert_(map key value hashed) call(@treemapinsert {map key value hashed})
+!treemapinsert(map key value) treemapinsert_(map key value hashvec(key))
+function(:treemapinsert 4 1 {
+	!map -6
+	!key -5
+	!value -4
+	!h -3
+	if(not(getvar(map))
+		return(quintuple(0 0 getvar(key) getvar(h) getvar(value)))
+	)
+	if(and(eq(getvar(h) arrget(getvar(map) treemap_hash)) veceq(getvar(key) arrget(getvar(map) treemap_key))) {
+		return(quintuple(
+			arrget(getvar(map) treemap_left)
+			arrget(getvar(map) treemap_right)
+			getvar(key)
+			getvar(h)
+			getvar(value)
+		))
+	})
+	
+	ifelse(lt(getvar(h) arrget(getvar(map) treemap_hash)){
+		return(quintuple(
+			treemapinsert_(arrget(getvar(map) treemap_left) getvar(key) getvar(value) getvar(h))
+			arrget(getvar(map) treemap_right)
+			arrget(getvar(map) treemap_key)
+			arrget(getvar(map) treemap_hash)
+			arrget(getvar(map) treemap_value)
+		))
+	} {
+		return(quintuple(
+			arrget(getvar(map) treemap_left)
+			treemapinsert_(arrget(getvar(map) treemap_right) getvar(key) getvar(value) getvar(h))
+			arrget(getvar(map) treemap_key)
+			arrget(getvar(map) treemap_hash)
+			arrget(getvar(map) treemap_value)
+		))
+	})
+})
+
 !hashmapsize 16
 !hashmapnew{
 	pair(16 malloc(16))
@@ -685,7 +718,7 @@ function(:hashmapinsert 3 1 {
 	if(not(deref(getvar(location))) {
 		setref(getvar(location) vecnew)
 	})
-	vecmapset(deref(getvar(location)) getvar(key) getvar(value))
+	linkedmapinsert(deref(getvar(location)) getvar(key) getvar(value))
 })
 !hashmapinsert(map key value) call(@hashmapinsert {map key value})
 
@@ -1174,7 +1207,7 @@ function(:compile_tree 4 6 {
 	})
 	if (eq(nodetype Nodetype_macro){
 		setvar(macrodata arrget(getvar(node) 2))
-		return(linkedmapinsert(
+		return(treemapinsert(
 			getvar(substitutions)
 			arrget(getvar(node) 1)
 			quadruple(
@@ -1184,8 +1217,6 @@ function(:compile_tree 4 6 {
 				arrget(getvar(macrodata) 1)
 			)
 		))
-		#vecmapset(getvar(substitutions) arrget(getvar(node) 1) arrget(getvar(node) 2))
-		#return(getvar(substitutions))
 	})
 	if (eq(nodetype Nodetype_call){
 		!_callnode_name arrget(getvar(node) 1)
@@ -1193,7 +1224,7 @@ function(:compile_tree 4 6 {
 		#print("    ")
 		#printstr(_callnode_name)
 		#println("(")
-		setvar(cursub linkedmapget(getvar(substitutions) _callnode_name 0))
+		setvar(cursub treemapget(getvar(substitutions) _callnode_name 0))
 		if (eq(getvar(cursub) 0) {
 			print("call to unknown macro '")
 			printstr(_callnode_name)
@@ -1220,7 +1251,7 @@ function(:compile_tree 4 6 {
 			setvar(subcode vecnew)
 			compile_tree(getvar(subcode) vecget(_callnode_args getvar(i)) getvar(substitutions) getvar(scope))
 			.drop
-			setvar(bodysubs linkedmapinsert(
+			setvar(bodysubs treemapinsert(
 				getvar(bodysubs)
 				vecget(_substitution_args getvar(i))
 				quadruple(
@@ -1241,7 +1272,7 @@ function(:compile_tree 4 6 {
 			vecappend(getvar(name) Codetype_label)
 			vecappend(getvar(name) deref(@scopeid))
 			vecappend(getvar(subcode) pair(Codetype_reference getvar(name)))
-			setvar(bodysubs linkedmapinsert(
+			setvar(bodysubs treemapinsert(
 				getvar(bodysubs)
 				getvar(item)
 				quadruple(
@@ -1335,7 +1366,7 @@ function (:main 0 5 {
 	print(" KB)\n")
 	
 	setvar(code vecnew)
-	compile_tree(getvar(code) getvar(ast) linkedmapnew 0)
+	compile_tree(getvar(code) getvar(ast) treemapnew 0)
 	.drop
 	println("compiling done")
 	print("unlinked code tokens: ")
