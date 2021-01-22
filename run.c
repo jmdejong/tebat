@@ -13,7 +13,7 @@ Execution Execution_new(uint32_t *code, size_t codelen){
 	uint32_t *mem = malloc(sizeof(uint32_t) * INITIAL_MEM_SIZE);
 	size_t code_ptr = code[1];
 	size_t stack_ptr = code[2];
-	memcpy(mem, code, codelen);
+	memcpy(mem, code, codelen * sizeof(uint32_t));
 	Execution ex = {code_ptr, stack_ptr, INITIAL_MEM_SIZE, mem};
 	return ex;
 }
@@ -183,6 +183,11 @@ static inline Result run_instr(Execution *ex, int8_t *errcode){
 
 
 Result run(uint32_t *code, size_t codelen){
+	if (code[0] != 1952801396){
+		printf("Not valid tebat code!\n");
+		printf("identifier should be %d but is %d\n", 1952801396, code[0]);
+		exit(-1);
+	}
 	Execution ex = Execution_new(code, codelen);
 	Result result;
 	int8_t errcode;

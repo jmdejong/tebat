@@ -349,7 +349,7 @@
 
 # some initializer metadata
 [
-0
+1952801396
 @codestart # initial location of the code pointer
 @codeend # initial location of the stack pointer
 ]
@@ -573,11 +573,13 @@ function(:vecclone 1 1 {
 	getvar(new)
 })
 !vecclone(vec) call(@vecclone vec)
-function(:vecextend 2 0 {
+function(:vecextend 2 1 {
 	!vec -4
 	!src -3
+	!oldlength 2
+	setvar(oldlength veclength(getvar(vec)))
 	vecresize(getvar(vec) add(veclength(getvar(vec)) veclength(getvar(src))))
-	memmove(veclength(getvar(src)) arrget(getvar(src) 1) arrget(getvar(vec) 1))
+	memmove(veclength(getvar(src)) arrget(getvar(src) 1) add(arrget(getvar(vec) 1) getvar(oldlength)))
 })
 !vecextend(vec src) call(@vecextend {vec src})
 function(:veceq 2 1 {
@@ -622,6 +624,20 @@ function(:veceq 2 1 {
 	free(vec)
 }
 
+!str(text)(:stringstart :stringend){
+	vecnew
+	stringstart
+	while( neq(.dup stringend) {
+		vecappend(dup2 .movefrom)
+		add({ } 1)
+	})
+	jump(stringend)
+	:stringstart
+	text
+	:stringend
+	.drop
+}
+
 !printstr(vecstr){
 	vecstr
 	.dup
@@ -630,6 +646,26 @@ function(:veceq 2 1 {
 	.movefrom
 	printmem({ } { })
 }
+function(:printhex 1 3 {
+	!vec -3
+	!item 2
+	!j 3
+	!p 4
+	veciter(getvar(vec) varptr(item) {
+		setvar(j 32)
+		while(getvar(j){
+			addto(varptr(j) -4)
+			setvar(p bitand(shiftdown(getvar(item) getvar(j)) 15))
+			ifelse(lt(getvar(p) 10) {
+				putchar(add(getvar(p) '0))
+			} {
+				putchar(add(getvar(p) 55))
+			})
+		})
+		putchar('\n)
+	})
+})
+!printhex(vec) call(@printhex vec)
 
 function(:hashvec 1 2{
 	!vec -3
@@ -644,9 +680,13 @@ function(:hashvec 1 2{
 !hashvec(vec) call(@hashvec vec)
 
 !linkedmapnew 0
-!linkedmapinsert(map key value){
-	quadruple(map key value hashvec(key))
-}
+function(:linkedmapinsert 3 0 {
+	!map -5
+	!key -4
+	!value -3
+	quadruple(getvar(map) getvar(key) getvar(value) hashvec(getvar(key)))
+})
+!linkedmapinsert(map key value) call(@linkedmapinsert {map key value})
 !linkedmapget(map key default) call(@linkedmapget {map key default})
 function(:linkedmapget 3 1 {
 	!map -5
@@ -845,7 +885,7 @@ function(:tokenize 4 4 {
 		while( and(notatend isdecimal(nextchar)) {
 			setvar(char nextchar)
 			setvar(numvalue mult(getvar(numvalue) 10))
-			addto(varptr(numvalue) sub(getvar(char) '\n))
+			addto(varptr(numvalue) sub(getvar(char) '0))
 			addto(varptr(index) 1)
 		})
 		addtoken(Tokentype_num getvar(numvalue))
@@ -853,7 +893,7 @@ function(:tokenize 4 4 {
 	})
 	if(and(eq(getvar(char) '-) and(notatend isdecimal(nextchar))) {
 		# negative number
-		setvar(numvalue add(getvar(char) 0))
+		setvar(numvalue 0)
 		while( and(notatend isdecimal(nextchar)) {
 			setvar(numvalue mult(getvar(numvalue) 10))
 			addto(varptr(numvalue) sub(nextchar '0))
@@ -1196,7 +1236,7 @@ function(:parse 2 6 {
 	.drop
 }
 
-!Command_PUSH 3
+!Command_PUSH str("push")
 
 !compile_tree(code node substitutions scope) call(@compile_tree {code node substitutions scope})
 function(:compile_tree 4 6 {
@@ -1225,7 +1265,7 @@ function(:compile_tree 4 6 {
 		return(getvar(substitutions))
 	})
 	if (eq(nodetype Nodetype_raw){
-		vecextend(getvar(code) arrget(getvar(node) 1))
+		vecextend(getvar(code) Node_body(getvar(node)))
 		return(getvar(substitutions))
 	})
 	if (eq(nodetype Nodetype_block){
@@ -1239,7 +1279,7 @@ function(:compile_tree 4 6 {
 	})
 	if (eq(nodetype Nodetype_macro){
 		setvar(macrodata arrget(getvar(node) 2))
-		return(treemapinsert(
+		return(linkedmapinsert(
 			getvar(substitutions)
 			arrget(getvar(node) 1)
 			quadruple(
@@ -1256,7 +1296,7 @@ function(:compile_tree 4 6 {
 		#print("    ")
 		#printstr(_callnode_name)
 		#println("(")
-		setvar(cursub treemapget(getvar(substitutions) _callnode_name 0))
+		setvar(cursub linkedmapget(getvar(substitutions) _callnode_name 0))
 		if (eq(getvar(cursub) 0) {
 			print("call to unknown macro '")
 			printstr(_callnode_name)
@@ -1283,7 +1323,7 @@ function(:compile_tree 4 6 {
 			setvar(subcode vecnew)
 			compile_tree(getvar(subcode) vecget(_callnode_args getvar(i)) getvar(substitutions) getvar(scope))
 			.drop
-			setvar(bodysubs treemapinsert(
+			setvar(bodysubs linkedmapinsert(
 				getvar(bodysubs)
 				vecget(_substitution_args getvar(i))
 				quadruple(
@@ -1304,7 +1344,7 @@ function(:compile_tree 4 6 {
 			vecappend(getvar(name) Codetype_label)
 			vecappend(getvar(name) deref(@scopeid))
 			vecappend(getvar(subcode) pair(Codetype_reference getvar(name)))
-			setvar(bodysubs treemapinsert(
+			setvar(bodysubs linkedmapinsert(
 				getvar(bodysubs)
 				getvar(item)
 				quadruple(
@@ -1355,63 +1395,186 @@ function(:compile_tree 4 6 {
 	exit(-1)
 })
 
-function (:main 0 5 {
+
+function(:link 2 6 {
+	!unlinked -4
+	!command_map -3
+	!refcode 2
+	!labels 3
+	!resultcode 4
+	!item 5
+	!value 6
+	
+	
+	setvar(refcode vecnew)
+	setvar(labels linkedmapnew)
+	
+	veciter(getvar(unlinked) varptr(item) {
+		ifelse(eq(arrget(getvar(item) 0) Codetype_label) {
+			setvar(labels linkedmapinsert(getvar(labels) arrget(getvar(item) 1) veclength(getvar(refcode))))
+		} {
+			vecappend(getvar(refcode) getvar(item))
+		})
+	})
+	
+	setvar(resultcode vecnew)
+	
+	veciter(getvar(refcode) varptr(item) {
+		ifelse(eq(arrget(getvar(item) 0) Codetype_literal) {
+			vecappend(getvar(resultcode) arrget(getvar(item) 1))
+		} ifelse(eq(arrget(getvar(item) 0) Codetype_command) {
+			setvar(value linkedmapget(getvar(command_map) arrget(getvar(item) 1) -1))
+			if (eq(getvar(value) -1){
+				print("unknown command \"")
+				printstr(arrget(getvar(item) 1))
+				print("\"\n")
+				exit(-1)
+			})
+			vecappend(getvar(resultcode) getvar(value))
+		} ifelse(eq(arrget(getvar(item) 0) Codetype_reference) {
+			setvar(value linkedmapget(getvar(labels) arrget(getvar(item) 1) -1))
+			if (eq(getvar(value) -1){
+				print("unknown label \"")
+				printstr(arrget(getvar(item) 1))
+				print("\"\n")
+				exit(-1)
+			})
+			vecappend(getvar(resultcode) getvar(value))
+		} {
+			print("Invalid code type '")
+			putchar(arrget(getvar(item) 0))
+			print("'")
+			printint(arrget(getvar(item) 0))
+			putnl
+			exit(-1)
+		})))
+	})
+	
+	getvar(resultcode)
+	#todo: freeing
+	
+})
+!link(unlinked command_map) call(@link {unlinked command_map})
+
+function(:create_command_map 0 1 {
+	!map 2
+	setvar(map linkedmapnew)
+	setvar(map linkedmapinsert(getvar(map) str("noop") 1))
+	setvar(map linkedmapinsert(getvar(map) str("exit") 2))
+	setvar(map linkedmapinsert(getvar(map) str("push") 3))
+	setvar(map linkedmapinsert(getvar(map) str("dup") 4))
+	setvar(map linkedmapinsert(getvar(map) str("drop") 5))
+	setvar(map linkedmapinsert(getvar(map) str("undrop") 6))
+	setvar(map linkedmapinsert(getvar(map) str("swap") 7))
+	setvar(map linkedmapinsert(getvar(map) str("jump") 8))
+	setvar(map linkedmapinsert(getvar(map) str("jumpifz") 9))
+	setvar(map linkedmapinsert(getvar(map) str("getstack") 10))
+	setvar(map linkedmapinsert(getvar(map) str("setstack") 11))
+	setvar(map linkedmapinsert(getvar(map) str("movefrom") 12))
+	setvar(map linkedmapinsert(getvar(map) str("moveto") 13))
+	setvar(map linkedmapinsert(getvar(map) str("memmove") 14))
+	
+	setvar(map linkedmapinsert(getvar(map) str("add") 16))
+	setvar(map linkedmapinsert(getvar(map) str("neg") 17))
+	setvar(map linkedmapinsert(getvar(map) str("mult") 18))
+	setvar(map linkedmapinsert(getvar(map) str("div") 19))
+	setvar(map linkedmapinsert(getvar(map) str("mod") 20))
+	setvar(map linkedmapinsert(getvar(map) str("bitor") 21))
+	setvar(map linkedmapinsert(getvar(map) str("bitand") 22))
+	setvar(map linkedmapinsert(getvar(map) str("shiftup") 23))
+	setvar(map linkedmapinsert(getvar(map) str("shiftdown") 24))
+	setvar(map linkedmapinsert(getvar(map) str("not") 25))
+	setvar(map linkedmapinsert(getvar(map) str("negative") 26))
+	
+	setvar(map linkedmapinsert(getvar(map) str("putchar") 32))
+	setvar(map linkedmapinsert(getvar(map) str("getchar") 33))
+	setvar(map linkedmapinsert(getvar(map) str("memsize") 58))
+	setvar(map linkedmapinsert(getvar(map) str("brk") 49))
+	getvar(map)
+})
+!create_command_map call(@create_command_map {})
+
+function (:main 0 20 {
 	!input 2
 	!tokens 3
 	!token 4
 	!ast 5
 	!code 6
+	!command_map 7
+	!bytecode 8
+	!item 9
 	
 	setvar(input call(@readinput { }))
-	putint(veclength(getvar(input)))
-	println(" characters of input read")
+#	putint(veclength(getvar(input)))
+#	println(" characters of input read")
 	
 	setvar(tokens tokenize(getvar(input)))
-	veciter(getvar(tokens) varptr(token) {
-		ifelse (eq(arrget(getvar(token) 0) Tokentype_ident) {
-			printstr(arrget(getvar(token) 1))
-		} {
-			putchar(arrget(getvar(token) 0))
-		})
-		putchar(' )
-	})
-	putnl
-	print("number of tokens: ")
-	printint(veclength(getvar(tokens)))
-	putnl
+#	veciter(getvar(tokens) varptr(token) {
+#		ifelse (eq(arrget(getvar(token) 0) Tokentype_ident) {
+#			printstr(arrget(getvar(token) 1))
+#		} {
+#			putchar(arrget(getvar(token) 0))
+#		})
+#		putchar(' )
+#	})
+#	putnl
+#	print("number of tokens: ")
+#	printint(veclength(getvar(tokens)))
+#	putnl
 	
-	print("memory used: ")
-	putint(deref(@heapend))
-	print(" words (")
-	putint(div(deref(@heapend) 250))
-	print(" KB)\n")
+#	print("memory used: ")
+#	putint(deref(@heapend))
+#	print(" words (")
+#	putint(div(deref(@heapend) 250))
+#	print(" KB)\n")
 	
 	setvar(ast parse(getvar(tokens)))
-	print("ast type: ")
-	putchar(deref(getvar(ast)))
-	putnl
+#	print("ast type: ")
+#	putchar(deref(getvar(ast)))
+#	putnl
 	
-	print("memory used: ")
-	putint(deref(@heapend))
-	print(" words (")
-	putint(div(deref(@heapend) 250))
-	print(" KB)\n")
+#	print("memory used: ")
+#	putint(deref(@heapend))
+#	print(" words (")
+#	putint(div(deref(@heapend) 250))
+#	print(" KB)\n")
+	
+	setvar(command_map create_command_map)
 	
 	setvar(code vecnew)
-	compile_tree(getvar(code) getvar(ast) treemapnew 0)
+	compile_tree(getvar(code) getvar(ast) linkedmapnew 0)
 	.drop
-	println("compiling done")
-	print("unlinked code tokens: ")
-	putint(veclength(getvar(code)))
-	putnl
+#	println("compiling done")
+#	print("unlinked code tokens: ")
+#	putint(veclength(getvar(code)))
+#	putnl
 	
-	print("memory used: ")
-	putint(deref(@heapend))
-	print(" words (")
-	putint(div(deref(@heapend) 250))
-	print(" KB; ")
-	putint(div(deref(@heapend) 250000))
-	print(" MB)\n")
+#	print("memory used: ")
+#	putint(deref(@heapend))
+#	print(" words (")
+#	putint(div(deref(@heapend) 250))
+#	print(" KB; ")
+#	putint(div(deref(@heapend) 250000))
+#	print(" MB)\n")
+	
+	setvar(bytecode link(getvar(code) getvar(command_map)))
+	
+#	println("linking done")
+#	print("resulting words: ")
+#	putint(veclength(getvar(bytecode)))
+#	putnl
+	
+	
+#	print("memory used: ")
+#	putint(deref(@heapend))
+#	print(" words (")
+#	putint(div(deref(@heapend) 250))
+#	print(" KB; ")
+#	putint(div(deref(@heapend) 250000))
+#	print(" MB)\n")
+	
+	printhex(getvar(bytecode))
+#	putnl
 	
 	0
 })

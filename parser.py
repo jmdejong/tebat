@@ -358,10 +358,18 @@ def compile_code(text):
 	return code
 	
 
+def writehex(code, fname):
+	codetext = "\n".join(format(c, "08X") for c in code)
+	with open(fname, "w") as fo:
+		fo.write(codetext)
 
 def main():
+	ashex = False
 	if len(sys.argv) > 1:
 		fname = sys.argv[1]
+		if fname == "--hex":
+			fname = sys.argv[2]
+			ashex = True
 		with open(fname) as f:
 			sourcecode = f.read()
 		outfname = fname.rpartition(".")[0] + ".tebat"
@@ -369,9 +377,12 @@ def main():
 		sourcecode = sys.stdin.read()
 		outfname = "code.tebat"
 	code = compile_code(sourcecode)
-	codebytes = b"".join(command.to_bytes(4, "little") for command in code)
-	with open(outfname, "wb") as fo:
-		fo.write(codebytes)
+	if ashex:
+		writehex(code, outfname)
+	else:
+		codebytes = b"".join(command.to_bytes(4, "little") for command in code)
+		with open(outfname, "wb") as fo:
+			fo.write(codebytes)
 	
 
 
