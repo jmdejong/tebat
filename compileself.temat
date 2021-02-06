@@ -349,7 +349,7 @@
 
 # some initializer metadata
 [
-1952801396
+1415933300
 @codestart # initial location of the code pointer
 @codeend # initial location of the stack pointer
 ]

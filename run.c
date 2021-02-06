@@ -183,9 +183,9 @@ static inline Result run_instr(Execution *ex, int8_t *errcode){
 
 
 Result run(uint32_t *code, size_t codelen){
-	if (code[0] != 1952801396){
+	if (code[0] != 1415933300){
 		printf("Not valid tebat code!\n");
-		printf("identifier should be %d but is %d\n", 1952801396, code[0]);
+		printf("identifier should be %d but is %d\n", 1415933300, code[0]);
 		exit(-1);
 	}
 	Execution ex = Execution_new(code, codelen);
