@@ -13,4 +13,6 @@ An in between form, Tebbat is under consideration too.
 Tebbat is like tebat, but each word in the representation also has a tag whether it's a builtin, a literar value, a reference or a label.
 Tebbat could possibly be compiled to other (bytecode) languages.
 
+See [tebat_specification.md](tebat_specification.md) for an explanation of the Tebat bytecode language
 
+See [temat.md](temat.md) for an explanation of the temat language.
